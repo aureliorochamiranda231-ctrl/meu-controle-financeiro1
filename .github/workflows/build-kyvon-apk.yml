@@ -1,0 +1,89 @@
+name: Gerar APK KYVON
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'App.tsx'
+      - 'src/**'
+      - 'assets/**'
+      - 'app.json'
+      - 'package.json'
+      - 'package-lock.json'
+      - 'android-preview/**'
+      - '.github/workflows/build-kyvon-apk.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-apk:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - name: Baixar codigo
+        uses: actions/checkout@v4
+
+      - name: Preparar Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - name: Instalar dependencias
+        run: npm ci
+
+      - name: Exportar aplicativo web
+        run: npm run export:web
+
+      - name: Incluir web app no Android
+        run: |
+          mkdir -p android-preview/build/web-assets
+          cp -R dist/. android-preview/build/web-assets/
+
+      - name: Preparar Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Preparar Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Instalar plataforma Android
+        run: sdkmanager 'platforms;android-35' 'build-tools;35.0.0'
+
+      - name: Preparar Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.10.2'
+
+      - name: Compilar APK de teste
+        run: gradle -p android-preview assembleDebug --stacktrace --no-daemon
+
+      - name: Copiar APK
+        run: |
+          mkdir -p output
+          APK=$(find android-preview/build/outputs/apk -name '*.apk' -type f | head -n 1)
+          test -n "$APK"
+          cp "$APK" output/KYVON-beta.apk
+          ls -lh output/KYVON-beta.apk
+
+      - name: Guardar APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: KYVON-beta-apk
+          path: output/KYVON-beta.apk
+          if-no-files-found: error
+
+      - name: Publicar beta para download
+        if: github.ref == 'refs/heads/main'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: kyvon-beta-v1.3.0
+          name: KYVON beta v1.3.0
+          body: 'APK de testes do KYVON. Build de desenvolvimento, para instalar manualmente no Android. Não é uma versão publicada na Play Store.'
+          prerelease: true
+          files: output/KYVON-beta.apk
+          fail_on_unmatched_files: true

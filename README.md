@@ -47,3 +47,7 @@ O APK beta usa o código em `android-preview/` para executar a exportação web 
 ## Identidade visual KYVON
 
 O aplicativo usa apenas a letra **K** dourada sobre fundo preto no ícone e tela de abertura. A identidade foi configurada em `app.json` (Expo) e em `android-preview/res/drawable/` (APK Android de teste). Para gerar um novo APK, execute o build conforme as instruções anteriores; esta alteração por si só não compila nem distribui o APK.
+
+### Baixar KYVON beta
+
+Quando a rotina GitHub Actions **Gerar APK KYVON** terminar com sucesso, um APK beta estará disponível em **Releases** e como artefato da execução. Este arquivo é uma compilação de teste, com assinatura de desenvolvimento, e não representa uma publicação oficial na Play Store.

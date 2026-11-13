@@ -60,9 +60,11 @@ public final class MainActivity extends Activity {
                     return response(403, "Blocked", new byte[0]);
                 }
                 String path = url.getPath();
-                if (path == null || !path.matches("/indicador/(1|432|433)")) return response(404, "Not Found", new byte[0]);
-                int series = Integer.parseInt(path.substring("/indicador/".length()));
-                return fetchIndicator(series);
+                if (path != null && path.matches("/indicador/(1|432|433)")) {
+                    int series = Integer.parseInt(path.substring("/indicador/".length()));
+                    return fetchIndicator(series);
+                }
+                return readWebAsset(path);
             }
         });
         setContentView(view);
@@ -74,9 +76,35 @@ public final class MainActivity extends Activity {
             String html = new String(contents.toByteArray(), StandardCharsets.UTF_8);
             view.loadDataWithBaseURL("https://meucontrole.local/", html, "text/html", "UTF-8", null);
         } catch (IOException error) {
-            view.loadData("<p>Não foi possível abrir o Meu Controle.</p>", "text/html", "UTF-8");
+            view.loadData("<p>Não foi possível abrir o KYVON.</p>", "text/html", "UTF-8");
         }
     }
+    private WebResourceResponse readWebAsset(String path) {
+        if (path == null || !path.startsWith("/") || path.contains("..") || path.contains("\\\\") || path.contains("\\0")) {
+            return response(403, "Forbidden", new byte[0]);
+        }
+        String filename = path.substring(1);
+        if (filename.isEmpty()) filename = "index.html";
+        String mime;
+        if (filename.endsWith(".js") || filename.endsWith(".mjs")) mime = "text/javascript";
+        else if (filename.endsWith(".css")) mime = "text/css";
+        else if (filename.endsWith(".html")) mime = "text/html";
+        else if (filename.endsWith(".json")) mime = "application/json";
+        else if (filename.endsWith(".png")) mime = "image/png";
+        else if (filename.endsWith(".jpg") || filename.endsWith(".jpeg")) mime = "image/jpeg";
+        else if (filename.endsWith(".svg")) mime = "image/svg+xml";
+        else if (filename.endsWith(".woff2")) mime = "font/woff2";
+        else if (filename.endsWith(".woff")) mime = "font/woff";
+        else if (filename.endsWith(".ttf")) mime = "font/ttf";
+        else mime = "application/octet-stream";
+        try {
+            return new WebResourceResponse(mime, (mime.startsWith("text/") || mime.equals("application/json")) ? "UTF-8" : null,
+                    getAssets().open(filename));
+        } catch (IOException ignored) {
+            return response(404, "Not Found", new byte[0]);
+        }
+    }
+
     private static WebResourceResponse fetchIndicator(int series) {
         HttpsURLConnection connection = null;
         try {
