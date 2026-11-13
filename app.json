@@ -1,0 +1,22 @@
+{
+  "expo": {
+    "name": "Meu Controle",
+    "slug": "meu-controle-financeiro",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "dark",
+    "ios": {
+      "bundleIdentifier": "com.aureliorm.meucontrole"
+    },
+    "android": {
+      "package": "com.aureliorm.meucontrole"
+    },
+    "web": {
+      "bundler": "metro",
+      "output": "single"
+    },
+    "plugins": [
+      "expo-font"
+    ]
+  }
+}
