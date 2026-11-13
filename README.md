@@ -35,6 +35,11 @@ npm run export:web
 
 ## Assistente financeiro
 
-A aba **Assistente** interpreta perguntas em português com um classificador local baseado em exemplos. Os cálculos usam os lançamentos, limites, renda, reserva e meta cadastrados no app. O assistente consulta os registros em modo de leitura e funciona offline. O histórico da conversa fica em memória até o app fechar ou você tocar em **Limpar conversa**.
+A aba **Assistente** interpreta perguntas e comandos em português com um classificador local e regras de cálculo. O assistente pode consultar e alterar registros e ajustes do app. As alterações propostas aparecem no chat e só são aplicadas ao confirmar. O histórico da conversa fica em memória.
 
-Você pode perguntar quanto gastou em determinado período, ver categorias e maiores despesas, consultar a reserva ou simular como uma compra afetaria os limites. Por exemplo, escreva “Se eu gastar R$ 30,00?” ou “Quanto gastei em "mercado" este mês?”.
+- **“Quanto posso gastar hoje?”** usa seu limite diário, se configurado. Sem um limite fixo, divide o saldo semanal pelos dias até domingo, incluindo hoje.
+- **“Calcule meus limites”** distribui o saldo do orçamento mensal pelos dias restantes e propõe limites fixos. Os valores ficam salvos até que você recalcule ou altere.
+- **“Registre R$ 30,00 em mercado / Alimentação”**, **“Corrija ‘mercado’ para R$ 35,00”** e **“Defina o limite semanal para R$ 120,00”** propõem alterações. Use aspas duplas nos nomes das despesas ao corrigir ou excluir pelo chat.
+- **“Qual a Selic?”**, **“Qual o IPCA?”** e **“Qual o dólar?”** consultam as séries 432, 433 e 1 do Banco Central do Brasil. O app apresenta o valor com a data de referência. Somente as séries públicas são solicitadas. O texto da conversa e os registros financeiros ficam no aparelho.
+
+O APK beta usa o código em `android-preview/` para executar a exportação web localmente. O WebView intercepta os três caminhos de consulta pública e encaminha requisições HTTPS fixas ao Banco Central.

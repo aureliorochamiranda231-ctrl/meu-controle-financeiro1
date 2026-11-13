@@ -32,3 +32,27 @@ export function monthBounds(today: Date): [Date, Date] {
     new Date(today.getFullYear(), today.getMonth() + 1, 1)
   ];
 }
+
+export function dayBounds(today: Date): [Date, Date] {
+  const { start, end } = {
+    start: new Date(today.getFullYear(), today.getMonth(), today.getDate()),
+    end: new Date(today.getFullYear(), today.getMonth(), today.getDate() + 1)
+  };
+  return [start, end];
+}
+
+export function daysUntil(start: Date, end: Date) {
+  const utc = (date: Date) => Date.UTC(date.getFullYear(), date.getMonth(), date.getDate());
+  return Math.round((utc(end) - utc(start)) / 86_400_000);
+}
+
+export function difference(limit: number, spent: number) {
+  return (Math.round(limit * 100) - Math.round(spent * 100)) / 100;
+}
+
+export function dailyAllowance(daily: number, weekly: number, spent: number, today: Date) {
+  if (daily > 0) return { amount: daily, automatic: false };
+  if (!weekly) return null;
+  const days = daysUntil(today, weekBounds(today)[1]);
+  return { amount: Math.floor(Math.max(0, difference(weekly, spent)) * 100 / days + 1e-8) / 100, automatic: true };
+}

@@ -1,19 +1,23 @@
 import React, { useEffect, useRef, useState } from "react";
 import {
-  Alert, KeyboardAvoidingView, Platform, ScrollView,
+  Alert, KeyboardAvoidingView, Linking, Platform, ScrollView,
   StatusBar, StyleSheet, Text, TextInput, TouchableOpacity, View
 } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import Ionicons from "@expo/vector-icons/Ionicons";
 import { SafeAreaProvider, SafeAreaView } from "react-native-safe-area-context";
-import { money, monthBounds, parseMoney, sumExpenses, weekBounds } from "./src/finance";
+import { dailyAllowance, dayBounds, difference, money, monthBounds, parseMoney, sumExpenses, weekBounds } from "./src/finance";
 import { answerQuestion, categories, suggestedQuestions, type AppData, type Expense } from "./src/assistant";
+
+import { applyAction, parseAction, type AssistantAction } from "./src/assistantActions";
+import { detectIndicator, readIndicator } from "./src/publicIndicators";
 
 const KEY = "@meu_controle_v1";
 const initialData: AppData = {
   monthlyIncome: 0,
   budget: 0,
   weeklyLimit: 0,
+  dailyLimit: 0,
   reserve: 0,
   goalTarget: 0,
   expenses: [],
@@ -50,6 +54,7 @@ function FinanceApp() {
   const [today, setToday] = useState(() => new Date());
   const [editingId, setEditingId] = useState<string | null>(null);
   const [historyPeriod, setHistoryPeriod] = useState<"all" | "week">("all");
+  const [dailyInput, setDailyInput] = useState("");
   const [weeklyInput, setWeeklyInput] = useState("");
   const [reserveDeposit, setReserveDeposit] = useState("");
   const [title, setTitle] = useState("");
@@ -60,7 +65,10 @@ function FinanceApp() {
   const [reserveInput, setReserveInput] = useState("");
   const [goalInput, setGoalInput] = useState("");
   const [question, setQuestion] = useState("");
-  const [conversation, setConversation] = useState<{ question: string; answer: string }[]>([]);
+  const [conversation, setConversation] = useState<{ question: string; answer: string; source?: string }[]>([]);
+  const [pending, setPending] = useState<{ action: AssistantAction; description: string } | null>(null);
+  const [onlineBusy, setOnlineBusy] = useState(false);
+  const lookupId = useRef(0);
 
 
   useEffect(() => {
@@ -93,7 +101,8 @@ function FinanceApp() {
     setReserveInput(data.reserve ? String(data.reserve).replace(".", ",") : "");
     setGoalInput(data.goalTarget ? String(data.goalTarget).replace(".", ",") : "");
     setWeeklyInput(data.weeklyLimit ? String(data.weeklyLimit).replace(".", ",") : "");
-  }, [data.monthlyIncome, data.budget, data.reserve, data.goalTarget, data.weeklyLimit]);
+    setDailyInput(data.dailyLimit ? String(data.dailyLimit).replace(".", ",") : "");
+  }, [data.monthlyIncome, data.budget, data.reserve, data.goalTarget, data.weeklyLimit, data.dailyLimit]);
 
   const [weekStart, weekEnd] = weekBounds(today);
   const weekExpenses = data.expenses.filter(item => {
@@ -106,8 +115,14 @@ function FinanceApp() {
     return date >= monthStart && date < monthEnd;
   }));
   const weeklySpent = sumExpenses(weekExpenses);
-  const weeklyAvailable = data.weeklyLimit - weeklySpent;
-  const available = data.budget - spent;
+  const [dayStart, dayEnd] = dayBounds(today);
+  const dailySpent = sumExpenses(weekExpenses.filter(item => {
+    const date = new Date(item.date);
+    return date >= dayStart && date < dayEnd;
+  }));
+  const todayAllowance = dailyAllowance(data.dailyLimit, data.weeklyLimit, weeklySpent, today);
+  const weeklyAvailable = difference(data.weeklyLimit, weeklySpent);
+  const available = difference(data.budget, spent);
   const goalProgress = data.goalTarget > 0
     ? Math.min(100, (data.reserve / data.goalTarget) * 100) : 0;
   const visibleExpenses = historyPeriod === "week" ? weekExpenses : data.expenses;
@@ -160,13 +175,14 @@ function FinanceApp() {
   function saveSettings() {
     const monthlyIncome = parseMoney(incomeInput);
     const budget = parseMoney(budgetInput);
+    const dailyLimit = parseMoney(dailyInput);
     const weeklyLimit = parseMoney(weeklyInput);
     const reserve = parseMoney(reserveInput);
     const goalTarget = parseMoney(goalInput);
-    if (![monthlyIncome, budget, weeklyLimit, reserve, goalTarget].every(Number.isFinite)) {
+    if (![monthlyIncome, budget, dailyLimit, weeklyLimit, reserve, goalTarget].every(Number.isFinite)) {
       return inform("Valor inválido", "Confira os valores informados em reais.");
     }
-    setData(current => ({ ...current, monthlyIncome, budget, weeklyLimit, reserve, goalTarget }));
+    setData(current => ({ ...current, monthlyIncome, budget, dailyLimit, weeklyLimit, reserve, goalTarget }));
     setTab("home");
   }
 
@@ -179,12 +195,72 @@ function FinanceApp() {
     setReserveDeposit("");
   }
 
-  function askAssistant(input: string) {
-    const prompt = input.trim();
-    if (!prompt) return;
-    const answer = answerQuestion(prompt, data);
-    setConversation(previous => [...previous.slice(-9), { question: prompt, answer }]);
+  function clearConversation() {
+    lookupId.current += 1;
+    setOnlineBusy(false);
+    setConversation([]);
+    setPending(null);
+  }
+
+  function resetAll() {
+    resetExpenseForm();
+    setReserveDeposit("");
     setQuestion("");
+    clearConversation();
+    setData(initialData);
+    setTab("home");
+  }
+
+  async function askAssistant(input: string) {
+    const prompt = input.trim();
+    if (!prompt || pending || onlineBusy) return;
+    setQuestion("");
+    const append = (answer: string, source?: string) =>
+      setConversation(previous => [...previous.slice(-9), { question: prompt, answer, source }]);
+
+    const result = parseAction(prompt, data);
+    if (result && "message" in result) {
+      append(result.message);
+      return;
+    }
+    if (result && "action" in result) {
+      if (result.action.type === "navigate") {
+        setTab(result.action.tab);
+        return;
+      }
+      setPending(result);
+      append("Revise a alteração e confirme abaixo.");
+      return;
+    }
+    const indicator = detectIndicator(prompt);
+    if (indicator) {
+      const id = ++lookupId.current;
+      setOnlineBusy(true);
+      const response = await readIndicator(indicator);
+      if (id === lookupId.current) {
+        append(response.answer, response.source);
+        setOnlineBusy(false);
+      }
+      return;
+    }
+    append(answerQuestion(prompt, data));
+  }
+
+  function finishAction(approved: boolean) {
+    if (!pending) return;
+    const { action, description } = pending;
+    setPending(null);
+    if (approved && action.type === "reset") {
+      resetAll();
+      return;
+    }
+    const now = new Date();
+    if (approved) setData(current => applyAction(current, action, initialData, now));
+    setConversation(previous => previous.map((message, index) =>
+      index === previous.length - 1
+        ? { ...message, answer: approved ? `Concluído. ${description}.` : "Alteração cancelada." }
+        : message
+    ));
   }
 
   if (!loaded) {
@@ -221,6 +297,15 @@ function FinanceApp() {
                     {money(Math.abs(weeklyAvailable))} {weeklyAvailable < 0 ? "acima do limite" : "disponíveis"}
                   </Text>
                 : <TouchableOpacity onPress={() => setTab("settings")}><Text style={styles.link}>Definir limite semanal</Text></TouchableOpacity>}
+            </View>
+            <View style={styles.panel}>
+              <Text style={styles.sectionTitle}>Limite diário</Text>
+              <Text style={styles.bodyText}>{money(dailySpent)} em gastos hoje</Text>
+              {todayAllowance ? <Text style={styles.bodyText}>
+                {todayAllowance.automatic
+                  ? `${money(todayAllowance.amount)} sugeridos para o restante do dia`
+                  : `${money(Math.abs(difference(todayAllowance.amount, dailySpent)))} ${dailySpent > todayAllowance.amount ? "acima do limite" : "disponíveis hoje"}`}
+              </Text> : <TouchableOpacity onPress={() => setTab("settings")}><Text style={styles.link}>Definir limite diário</Text></TouchableOpacity>}
             </View>
             <Text style={styles.sectionTitle}>Visão geral</Text>
             <View style={styles.statsRow}>
@@ -305,10 +390,10 @@ function FinanceApp() {
 
           {tab === "assistant" && <>
             <Text style={styles.pageTitle}>Assistente financeiro</Text>
-            <Text style={styles.pageSubtitle}>Consulte seus registros no aparelho. As perguntas e respostas ficam nesta sessão.</Text>
+            <Text style={styles.pageSubtitle}>Calcule limites, registre despesas e consulte Selic, IPCA e dólar. Seus lançamentos ficam no aparelho.</Text>
             <View style={styles.filters}>
               {suggestedQuestions.map(suggestion => (
-                <TouchableOpacity key={suggestion.label} accessibilityRole="button" style={styles.chip} onPress={() => askAssistant(suggestion.question)}>
+                <TouchableOpacity key={suggestion.label} accessibilityRole="button" disabled={!!pending || onlineBusy} style={styles.chip} onPress={() => askAssistant(suggestion.question)}>
                   <Text style={styles.chipText}>{suggestion.label}</Text>
                 </TouchableOpacity>
               ))}
@@ -316,16 +401,32 @@ function FinanceApp() {
             {conversation.map((message, index) => (
               <View key={index} style={styles.messageGroup}>
                 <View style={styles.questionBubble}><Text style={styles.messageText}>{message.question}</Text></View>
-                <View style={styles.answerBubble}><Text accessibilityLiveRegion="polite" style={styles.messageText}>{message.answer}</Text></View>
+                <View style={styles.answerBubble}>
+                  <Text accessibilityLiveRegion="polite" style={styles.messageText}>{message.answer}</Text>
+                  {message.source && <TouchableOpacity accessibilityRole="link" onPress={() => Linking.openURL(message.source!).catch(() => inform("Fonte", message.source!))}>
+                    <Text style={styles.link}>Ver dados do Banco Central</Text>
+                  </TouchableOpacity>}
+                </View>
               </View>
             ))}
+            {pending && <View style={styles.panel}>
+              <Text style={styles.sectionTitle}>Confirmar alteração</Text>
+              <Text style={styles.bodyText}>{pending.description}</Text>
+              <TouchableOpacity accessibilityRole="button" style={styles.primaryButton} onPress={() => finishAction(true)}>
+                <Text style={styles.primaryButtonText}>Confirmar</Text>
+              </TouchableOpacity>
+              <TouchableOpacity accessibilityRole="button" onPress={() => finishAction(false)}>
+                <Text style={styles.clearConversation}>Cancelar alteração</Text>
+              </TouchableOpacity>
+            </View>}
+            {onlineBusy && <Text accessibilityLiveRegion="polite" style={styles.bodyText}>Consultando o Banco Central…</Text>}
             <View style={styles.panel}>
               <TextInput
                 accessibilityLabel="Pergunta ao assistente"
                 style={styles.input}
                 value={question}
                 onChangeText={setQuestion}
-                placeholder="Ex.: quanto gastei hoje?"
+                placeholder="Ex.: registre R$ 30,00 em mercado"
                 placeholderTextColor="#9BA8B6"
                 maxLength={300}
                 returnKeyType="send"
@@ -333,15 +434,15 @@ function FinanceApp() {
               />
               <TouchableOpacity
                 accessibilityRole="button"
-                accessibilityState={{ disabled: !question.trim() }}
-                disabled={!question.trim()}
-                style={[styles.primaryButton, !question.trim() && styles.disabledButton]}
+                accessibilityState={{ disabled: (!question.trim() || !!pending || onlineBusy) }}
+                disabled={(!question.trim() || !!pending || onlineBusy)}
+                style={[styles.primaryButton, (!question.trim() || !!pending || onlineBusy) && styles.disabledButton]}
                 onPress={() => askAssistant(question)}
               >
                 <Ionicons name="send-outline" size={16} color="#07130E" />
                 <Text style={styles.primaryButtonText}>Enviar pergunta</Text>
               </TouchableOpacity>
-              {conversation.length > 0 && <TouchableOpacity accessibilityRole="button" onPress={() => setConversation([])}>
+              {conversation.length > 0 && <TouchableOpacity accessibilityRole="button" onPress={clearConversation}>
                 <Text style={styles.clearConversation}>Limpar conversa</Text>
               </TouchableOpacity>}
             </View>
@@ -354,6 +455,7 @@ function FinanceApp() {
               <Field label="Renda mensal (R$)" value={incomeInput} onChange={setIncomeInput} />
               <Field label="Orçamento mensal (R$)" value={budgetInput} onChange={setBudgetInput} />
               <Field label="Limite semanal (R$)" value={weeklyInput} onChange={setWeeklyInput} />
+              <Field label="Limite diário (R$)" value={dailyInput} onChange={setDailyInput} />
               <Field label="Reserva já guardada (R$)" value={reserveInput} onChange={setReserveInput} />
               <Field label="Meta da reserva (R$)" value={goalInput} onChange={setGoalInput} />
               <TouchableOpacity style={styles.primaryButton} onPress={saveSettings}><Text style={styles.primaryButtonText}>Salvar planejamento</Text></TouchableOpacity>
@@ -361,14 +463,7 @@ function FinanceApp() {
             <View style={styles.panel}>
               <Text style={styles.sectionTitle}>Seus dados</Text>
               <Text style={styles.bodyText}>Nesta primeira versão, seus registros ficam armazenados localmente neste aparelho. Não há conta, sincronização em nuvem ou conexão com banco.</Text>
-              <TouchableOpacity onPress={() => confirmAction("Apagar todos os dados?", "Isso remove os registros deste aparelho.", "Apagar", () => {
-                resetExpenseForm();
-                setReserveDeposit("");
-                setQuestion("");
-                setConversation([]);
-                setData(initialData);
-                setTab("home");
-              })}>
+              <TouchableOpacity onPress={() => confirmAction("Apagar todos os dados?", "Isso remove os registros deste aparelho.", "Apagar", resetAll)}>
                 <Text style={styles.dangerText}>Apagar todos os meus dados</Text>
               </TouchableOpacity>
             </View>

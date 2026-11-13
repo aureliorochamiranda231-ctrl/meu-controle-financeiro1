@@ -1,4 +1,4 @@
-import { money, monthBounds, parseMoney, sumExpenses, weekBounds } from "./finance";
+import { dailyAllowance, dayBounds, money, monthBounds, parseMoney, sumExpenses, weekBounds } from "./finance";
 
 export type Expense = {
   id: string;
@@ -12,6 +12,7 @@ export type AppData = {
   monthlyIncome: number;
   budget: number;
   weeklyLimit: number;
+  dailyLimit: number;
   reserve: number;
   goalTarget: number;
   expenses: Expense[];
@@ -22,12 +23,14 @@ export const categories = ["Alimentação", "Transporte", "Moradia", "Saúde", "
 
 export const suggestedQuestions = [
   { label: "Resumo", question: "Como estão minhas finanças?" },
+  { label: "Limite diário", question: "Quanto posso gastar hoje?" },
   { label: "Limite semanal", question: "Quanto resta do meu limite semanal?" },
+  { label: "Calcular limites", question: "Calcule meus limites" },
   { label: "Por categoria", question: "Em que categorias mais gastei este mês?" },
   { label: "Reserva", question: "Quanto falta para minha meta da reserva?" }
 ];
 
-function normalize(text: string) {
+export function normalize(text: string) {
   return text.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
 }
 
@@ -117,11 +120,14 @@ export function answerQuestion(question: string, data: AppData, now = new Date()
   const lastWeek = new Date(week[0]);
   lastWeek.setDate(lastWeek.getDate() - 7);
   const lastMonth = new Date(month[0].getFullYear(), month[0].getMonth() - 1, 1);
-  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const [today, tomorrow] = dayBounds(now);
+  const daily = sumExpenses(inPeriod(data.expenses, [today, tomorrow]));
+  const day = dailyAllowance(data.dailyLimit, data.weeklyLimit, weekly, now);
+  const dayStatus = !day ? "Limite diário: defina um limite diário ou semanal em Ajustes."
+    : day.automatic ? `Sugestão para gastar ainda hoje: ${money(day.amount)}. Dividi o saldo semanal pelos dias restantes até domingo, incluindo hoje. Gastos de hoje: ${money(daily)}.`
+    : remaining("Limite diário", day.amount, daily);
   const yesterday = new Date(today);
   yesterday.setDate(yesterday.getDate() - 1);
-  const tomorrow = new Date(today);
-  tomorrow.setDate(tomorrow.getDate() + 1);
 
   let period = "neste mês";
   let bounds = month;
@@ -163,6 +169,7 @@ export function answerQuestion(question: string, data: AppData, now = new Date()
     const amount = parseMoney(simulation[1]);
     if (!Number.isFinite(amount) || amount <= 0) return "Informe um valor válido em reais para simular a despesa.";
     return `Se você acrescentar uma despesa de ${money(amount)} hoje:\n` +
+      (data.dailyLimit > 0 ? remaining("Limite diário", data.dailyLimit, sumExpenses([{ amount }, { amount: daily }])) + "\n" : "") +
       remaining("Limite semanal", data.weeklyLimit, sumExpenses([{ amount }, { amount: weekly }])) + "\n" +
       remaining("Orçamento mensal", data.budget, sumExpenses([{ amount }, { amount: monthly }]));
   }
@@ -181,6 +188,7 @@ export function answerQuestion(question: string, data: AppData, now = new Date()
 
   if (/\b(categorias?|onde|em que|com o que)\b/.test(query)) return categoryDetails(expenses, period);
   if (/\b(maior(?:es)?|mais caros?|mais caras?)\b/.test(query)) return expenseDetails(expenses, period);
+  if (/\b(diario|diaria|por dia)\b/.test(query) || /\bhoje\b/.test(query) && /(?:posso gastar|limite|resta|sobrou|disponivel|saldo|margem)/.test(query)) return dayStatus;
   if (/\b(limite|resta|sobrou|estourei|orcamento|disponivel|saldo|sobra|ultrapassei)\b/.test(query) || intent === "limit") {
     if (period === "nesta semana") return remaining("Limite semanal", data.weeklyLimit, weekly);
     if (/\b(hoje|ontem)\b|semana passada|mes passado/.test(query)) {
@@ -198,6 +206,7 @@ export function answerQuestion(question: string, data: AppData, now = new Date()
 
   if (/\b(resumo|panorama|financas|situacao)\b/.test(query) || intent === "summary") {
     return [
+      dayStatus,
       remaining("Limite semanal", data.weeklyLimit, weekly),
       remaining("Orçamento mensal", data.budget, monthly),
       reservation(data)
