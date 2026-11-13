@@ -3,7 +3,7 @@
     android:versionCode="3" android:versionName="1.2.0-beta">
   <uses-sdk android:minSdkVersion="26" android:targetSdkVersion="34"/>
   <uses-permission android:name="android.permission.INTERNET"/>
-  <application android:label="Meu Controle" android:allowBackup="false" android:usesCleartextTraffic="false" android:theme="@android:style/Theme.Material.NoActionBar" android:icon="@drawable/icon">
+  <application android:label="KYVON" android:allowBackup="false" android:usesCleartextTraffic="false" android:theme="@android:style/Theme.Material.NoActionBar" android:icon="@drawable/icon">
     <activity android:name="com.aureliorm.meucontrole.MainActivity" android:exported="true" android:screenOrientation="portrait" android:windowSoftInputMode="adjustResize">
       <intent-filter>
         <action android:name="android.intent.action.MAIN"/>

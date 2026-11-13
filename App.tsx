@@ -272,8 +272,8 @@ function FinanceApp() {
       <StatusBar barStyle="light-content" />
       <View style={styles.header}>
         <View>
-          <Text style={styles.brand}>MEU CONTROLE</Text>
-          <Text style={styles.subtitle}>Finanças pessoais</Text>
+          <Text style={styles.brand}>KYVON</Text>
+          <Text style={styles.subtitle}>Inteligência financeira</Text>
         </View>
         <View style={styles.avatar}><Ionicons name="wallet-outline" size={22} color="#65D6A2" /></View>
       </View>

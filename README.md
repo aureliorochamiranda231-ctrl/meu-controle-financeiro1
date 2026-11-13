@@ -1,6 +1,6 @@
-# Meu Controle
+# KYVON
 
-Aplicativo de finanças pessoais em português, com visual escuro para Android, iPhone e navegador. A tela inicial mostra o orçamento mensal e o limite da semana, de segunda a domingo. Na aba Gastos você pode registrar, editar e excluir despesas. A aba Reserva acompanha o valor guardado e a meta.
+KYVON é um aplicativo de finanças pessoais em português, com visual escuro para Android, iPhone e navegador. A tela inicial mostra o orçamento mensal e o limite da semana, de segunda a domingo. Na aba Gastos você pode registrar, editar e excluir despesas. A aba Reserva acompanha o valor guardado e a meta.
 
 ## Testar no celular
 
@@ -43,3 +43,7 @@ A aba **Assistente** interpreta perguntas e comandos em português com um classi
 - **“Qual a Selic?”**, **“Qual o IPCA?”** e **“Qual o dólar?”** consultam as séries 432, 433 e 1 do Banco Central do Brasil. O app apresenta o valor com a data de referência. Somente as séries públicas são solicitadas. O texto da conversa e os registros financeiros ficam no aparelho.
 
 O APK beta usa o código em `android-preview/` para executar a exportação web localmente. O WebView intercepta os três caminhos de consulta pública e encaminha requisições HTTPS fixas ao Banco Central.
+
+## Identidade visual KYVON
+
+O aplicativo usa apenas a letra **K** dourada sobre fundo preto no ícone e tela de abertura. A identidade foi configurada em `app.json` (Expo) e em `android-preview/res/drawable/` (APK Android de teste). Para gerar um novo APK, execute o build conforme as instruções anteriores; esta alteração por si só não compila nem distribui o APK.
