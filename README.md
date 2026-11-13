@@ -32,3 +32,9 @@ Na primeira execução, o EAS pede para vincular o projeto à sua conta e config
 npm run typecheck
 npm run export:web
 ```
+
+## Assistente financeiro
+
+A aba **Assistente** interpreta perguntas em português com um classificador local baseado em exemplos. Os cálculos usam os lançamentos, limites, renda, reserva e meta cadastrados no app. O assistente consulta os registros em modo de leitura e funciona offline. O histórico da conversa fica em memória até o app fechar ou você tocar em **Limpar conversa**.
+
+Você pode perguntar quanto gastou em determinado período, ver categorias e maiores despesas, consultar a reserva ou simular como uma compra afetaria os limites. Por exemplo, escreva “Se eu gastar R$ 30,00?” ou “Quanto gastei em "mercado" este mês?”.

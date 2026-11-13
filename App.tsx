@@ -6,25 +6,8 @@ import {
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import Ionicons from "@expo/vector-icons/Ionicons";
 import { SafeAreaProvider, SafeAreaView } from "react-native-safe-area-context";
-import { parseMoney, sumExpenses, weekBounds } from "./src/finance";
-
-type Expense = {
-  id: string;
-  title: string;
-  amount: number;
-  category: string;
-  date: string;
-};
-type Goal = { id: string; title: string; target: number; saved: number };
-type AppData = {
-  monthlyIncome: number;
-  budget: number;
-  weeklyLimit: number;
-  reserve: number;
-  goalTarget: number;
-  expenses: Expense[];
-  goals: Goal[];
-};
+import { money, monthBounds, parseMoney, sumExpenses, weekBounds } from "./src/finance";
+import { answerQuestion, categories, suggestedQuestions, type AppData, type Expense } from "./src/assistant";
 
 const KEY = "@meu_controle_v1";
 const initialData: AppData = {
@@ -37,8 +20,6 @@ const initialData: AppData = {
   goals: []
 };
 
-const money = (n: number) =>
-  n.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 function inform(title: string, message: string) {
   if (Platform.OS === "web") window.alert(`${title}\n${message}`);
   else Alert.alert(title, message);
@@ -55,7 +36,7 @@ function confirmAction(title: string, message: string, label: string, action: ()
   ]);
 }
 
-type Tab = "home" | "expenses" | "goals" | "settings";
+type Tab = "home" | "expenses" | "goals" | "settings" | "assistant";
 
 export default function App() {
   return <SafeAreaProvider><FinanceApp /></SafeAreaProvider>;
@@ -78,6 +59,9 @@ function FinanceApp() {
   const [budgetInput, setBudgetInput] = useState("");
   const [reserveInput, setReserveInput] = useState("");
   const [goalInput, setGoalInput] = useState("");
+  const [question, setQuestion] = useState("");
+  const [conversation, setConversation] = useState<{ question: string; answer: string }[]>([]);
+
 
   useEffect(() => {
     const timer = setInterval(() => setToday(new Date()), 30_000);
@@ -116,8 +100,7 @@ function FinanceApp() {
     const date = new Date(item.date);
     return date >= weekStart && date < weekEnd;
   });
-  const monthStart = new Date(today.getFullYear(), today.getMonth(), 1);
-  const monthEnd = new Date(today.getFullYear(), today.getMonth() + 1, 1);
+  const [monthStart, monthEnd] = monthBounds(today);
   const spent = sumExpenses(data.expenses.filter(item => {
     const date = new Date(item.date);
     return date >= monthStart && date < monthEnd;
@@ -196,7 +179,13 @@ function FinanceApp() {
     setReserveDeposit("");
   }
 
-  const categories = ["Alimentação", "Transporte", "Moradia", "Saúde", "Lazer", "Compras", "Outros"];
+  function askAssistant(input: string) {
+    const prompt = input.trim();
+    if (!prompt) return;
+    const answer = answerQuestion(prompt, data);
+    setConversation(previous => [...previous.slice(-9), { question: prompt, answer }]);
+    setQuestion("");
+  }
 
   if (!loaded) {
     return <SafeAreaView style={styles.container}><Text style={styles.loading}>Carregando seu controle...</Text></SafeAreaView>;
@@ -214,7 +203,7 @@ function FinanceApp() {
       </View>
 
       <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === "ios" ? "padding" : undefined}>
-        <ScrollView key={tab} ref={scrollRef} contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
+        <ScrollView key={tab} ref={scrollRef} onContentSizeChange={tab === "assistant" && conversation.length ? () => scrollRef.current?.scrollToEnd({ animated: true }) : undefined} contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
           {tab === "home" && <>
             <View style={styles.hero}>
               <Text style={styles.eyebrow}>ORÇAMENTO DESTE MÊS</Text>
@@ -314,6 +303,50 @@ function FinanceApp() {
             </View>
           </>}
 
+          {tab === "assistant" && <>
+            <Text style={styles.pageTitle}>Assistente financeiro</Text>
+            <Text style={styles.pageSubtitle}>Consulte seus registros no aparelho. As perguntas e respostas ficam nesta sessão.</Text>
+            <View style={styles.filters}>
+              {suggestedQuestions.map(suggestion => (
+                <TouchableOpacity key={suggestion.label} accessibilityRole="button" style={styles.chip} onPress={() => askAssistant(suggestion.question)}>
+                  <Text style={styles.chipText}>{suggestion.label}</Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+            {conversation.map((message, index) => (
+              <View key={index} style={styles.messageGroup}>
+                <View style={styles.questionBubble}><Text style={styles.messageText}>{message.question}</Text></View>
+                <View style={styles.answerBubble}><Text accessibilityLiveRegion="polite" style={styles.messageText}>{message.answer}</Text></View>
+              </View>
+            ))}
+            <View style={styles.panel}>
+              <TextInput
+                accessibilityLabel="Pergunta ao assistente"
+                style={styles.input}
+                value={question}
+                onChangeText={setQuestion}
+                placeholder="Ex.: quanto gastei hoje?"
+                placeholderTextColor="#9BA8B6"
+                maxLength={300}
+                returnKeyType="send"
+                onSubmitEditing={() => askAssistant(question)}
+              />
+              <TouchableOpacity
+                accessibilityRole="button"
+                accessibilityState={{ disabled: !question.trim() }}
+                disabled={!question.trim()}
+                style={[styles.primaryButton, !question.trim() && styles.disabledButton]}
+                onPress={() => askAssistant(question)}
+              >
+                <Ionicons name="send-outline" size={16} color="#07130E" />
+                <Text style={styles.primaryButtonText}>Enviar pergunta</Text>
+              </TouchableOpacity>
+              {conversation.length > 0 && <TouchableOpacity accessibilityRole="button" onPress={() => setConversation([])}>
+                <Text style={styles.clearConversation}>Limpar conversa</Text>
+              </TouchableOpacity>}
+            </View>
+          </>}
+
           {tab === "settings" && <>
             <Text style={styles.pageTitle}>Seu planejamento</Text>
             <Text style={styles.pageSubtitle}>Personalize os valores para sua realidade.</Text>
@@ -331,6 +364,8 @@ function FinanceApp() {
               <TouchableOpacity onPress={() => confirmAction("Apagar todos os dados?", "Isso remove os registros deste aparelho.", "Apagar", () => {
                 resetExpenseForm();
                 setReserveDeposit("");
+                setQuestion("");
+                setConversation([]);
                 setData(initialData);
                 setTab("home");
               })}>
@@ -345,6 +380,7 @@ function FinanceApp() {
         <TabButton icon="home-outline" label="Início" active={tab === "home"} onPress={() => setTab("home")} />
         <TabButton icon="receipt-outline" label="Gastos" active={tab === "expenses"} onPress={() => setTab("expenses")} />
         <TabButton icon="shield-checkmark-outline" label="Reserva" active={tab === "goals"} onPress={() => setTab("goals")} />
+        <TabButton icon="chatbubble-ellipses-outline" label="Assistente" active={tab === "assistant"} onPress={() => setTab("assistant")} />
         <TabButton icon="settings-outline" label="Ajustes" active={tab === "settings"} onPress={() => setTab("settings")} />
       </View>
     </SafeAreaView>
@@ -406,7 +442,13 @@ const styles = StyleSheet.create({
   expenseTitle: { color: "#F2F5F8", fontWeight: "700", fontSize: 13 },
   expenseMeta: { color: "#8996A5", fontSize: 10, marginTop: 4 },
   expenseAmount: { color: "#FF9292", fontSize: 12, fontWeight: "700" },
-  filters: { flexDirection: "row", gap: 8, marginBottom: 14 },
+  filters: { flexDirection: "row", flexWrap: "wrap", gap: 8, marginBottom: 14 },
+  messageGroup: { gap: 8, marginBottom: 16 },
+  questionBubble: { backgroundColor: "#214A3B", alignSelf: "flex-end", maxWidth: "90%", borderRadius: 15, padding: 12 },
+  answerBubble: { backgroundColor: "#17212C", alignSelf: "flex-start", maxWidth: "94%", borderRadius: 15, padding: 14 },
+  messageText: { color: "#F4F7FA", fontSize: 14, lineHeight: 21 },
+  disabledButton: { opacity: 0.48 },
+  clearConversation: { color: "#AAB7C4", textAlign: "center", paddingTop: 16, fontSize: 12 },
   expenseActions: { flexDirection: "row", gap: 18, justifyContent: "flex-end" },
   weekBalance: { color: "#65D6A2", fontSize: 17, fontWeight: "700" },
   overLimit: { color: "#FF9292" },

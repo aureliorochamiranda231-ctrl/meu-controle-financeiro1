@@ -22,3 +22,13 @@ export function weekBounds(today: Date): [Date, Date] {
   end.setDate(end.getDate() + 7);
   return [start, end];
 }
+
+export const money = (amount: number) =>
+  amount.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+
+export function monthBounds(today: Date): [Date, Date] {
+  return [
+    new Date(today.getFullYear(), today.getMonth(), 1),
+    new Date(today.getFullYear(), today.getMonth() + 1, 1)
+  ];
+}
