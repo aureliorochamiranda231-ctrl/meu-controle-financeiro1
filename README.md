@@ -1,53 +1,41 @@
 # KYVON
 
-KYVON é um aplicativo de finanças pessoais em português, com visual escuro para Android, iPhone e navegador. A tela inicial mostra o orçamento mensal e o limite da semana, de segunda a domingo. Na aba Gastos você pode registrar, editar e excluir despesas. A aba Reserva acompanha o valor guardado e a meta.
+Aplicativo de finanças pessoais com visual escuro, gastos, limite diário e semanal, reserva e assistente baseado em regras.
 
-## Testar no celular
+## APK Android beta v1.4.0
+O APK de teste é agora **nativo React Native/Expo**, não usa WebView para renderizar o aplicativo e incorpora o pacote JavaScript/Hermes ao arquivo de instalação. Funciona sem servidor Metro e não depende do Android System WebView para mostrar a interface.
 
-Use Node.js 22 LTS ou mais recente. Na pasta do projeto, execute:
+A rotina GitHub Actions **Gerar APK KYVON**:
+1. Verifica o código TypeScript;
+2. Gera o projeto Android com `npx expo prebuild --platform android --clean --no-install`;
+3. Executa `./gradlew :app:assembleRelease` para incluir o JavaScript no APK;
+4. Instala e testa a abertura num emulador Android;
+5. Publica o APK em **Releases**, na versão `kyvon-beta-v1.4.0`.
 
+**Atenção:** o APK de testes usa chave de desenvolvimento gerada no ambiente de build. Se uma versão anterior tiver assinatura diferente, desinstale-a antes da instalação. Isso remove os dados locais dessa versão: exporte ou anote as informações importantes antes.
+
+## Executar na máquina de desenvolvimento
+
+Instale Node.js 22+ e execute:
 ```sh
 npm ci
 npm start
 ```
+Use Expo Go compatível com o SDK do projeto para testes de desenvolvimento. O APK distribuído pelo GitHub é **release standalone** e não precisa de Expo Go.
 
-Em um celular com Expo Go compatível com o SDK deste projeto, abra o QR code exibido pelo Expo. Use a mesma rede Wi‑Fi do computador. Para testar pelo navegador, execute `npm run web`.
-
-Em **Ajustes**, defina o orçamento mensal, o limite semanal e, se quiser, a meta de reserva. Os limites começam em branco. Os lançamentos ficam no armazenamento local do aparelho ou navegador, sem conta ou sincronização. Limpar os dados do aplicativo ou do navegador remove seus registros.
-
-## Gerar um APK de teste
-
-Em um computador, entre na sua conta Expo e inicie o build Android:
-
-```sh
-npx eas-cli login
-npx eas-cli build --platform android --profile preview
-```
-
-Na primeira execução, o EAS pede para vincular o projeto à sua conta e configurar a assinatura do APK. Quando concluir, ele fornece o link de instalação. Para distribuição iOS pelo TestFlight, o build precisa ser assinado com uma conta Apple Developer.
-
-## Verificar o código
-
+Verificações:
 ```sh
 npm run typecheck
 npm run export:web
 ```
 
-## Assistente financeiro
+## Dados e assistente
 
-A aba **Assistente** interpreta perguntas e comandos em português com um classificador local e regras de cálculo. O assistente pode consultar e alterar registros e ajustes do app. As alterações propostas aparecem no chat e só são aplicadas ao confirmar. O histórico da conversa fica em memória.
+Na aba **Ajustes**, defina orçamento mensal, limites e meta de reserva.
+Os lançamentos ficam em armazenamento local no aparelho: não há conta, backup, sincronização em nuvem nem conexão bancária. Desinstalar ou limpar dados remove os registros.
 
-- **“Quanto posso gastar hoje?”** usa seu limite diário, se configurado. Sem um limite fixo, divide o saldo semanal pelos dias até domingo, incluindo hoje.
-- **“Calcule meus limites”** distribui o saldo do orçamento mensal pelos dias restantes e propõe limites fixos. Os valores ficam salvos até que você recalcule ou altere.
-- **“Registre R$ 30,00 em mercado / Alimentação”**, **“Corrija ‘mercado’ para R$ 35,00”** e **“Defina o limite semanal para R$ 120,00”** propõem alterações. Use aspas duplas nos nomes das despesas ao corrigir ou excluir pelo chat.
-- **“Qual a Selic?”**, **“Qual o IPCA?”** e **“Qual o dólar?”** consultam as séries 432, 433 e 1 do Banco Central do Brasil. O app apresenta o valor com a data de referência. Somente as séries públicas são solicitadas. O texto da conversa e os registros financeiros ficam no aparelho.
+O assistente local interpreta perguntas e comandos financeiros, propõe alterações que exigem confirmação e consulta Selic, IPCA e dólar ao Banco Central por HTTPS. Não é um modelo de IA conversacional hospedado.
 
-O APK beta usa o código em `android-preview/` para executar a exportação web localmente. O WebView intercepta os três caminhos de consulta pública e encaminha requisições HTTPS fixas ao Banco Central.
+## Identidade visual
 
-## Identidade visual KYVON
-
-O aplicativo usa apenas a letra **K** dourada sobre fundo preto no ícone e tela de abertura. A identidade foi configurada em `app.json` (Expo) e em `android-preview/res/drawable/` (APK Android de teste). Para gerar um novo APK, execute o build conforme as instruções anteriores; esta alteração por si só não compila nem distribui o APK.
-
-### Baixar KYVON beta
-
-Quando a rotina GitHub Actions **Gerar APK KYVON** terminar com sucesso, um APK beta estará disponível em **Releases** e como artefato da execução. Este arquivo é uma compilação de teste, com assinatura de desenvolvimento, e não representa uma publicação oficial na Play Store.
+Ícone dourado com letra **K** em fundo preto. O aplicativo é disponibilizado em versão beta, não na Play Store.

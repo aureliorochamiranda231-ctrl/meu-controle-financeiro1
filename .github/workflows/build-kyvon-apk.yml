@@ -10,7 +10,6 @@ on:
       - 'app.json'
       - 'package.json'
       - 'package-lock.json'
-      - 'android-preview/**'
       - '.github/workflows/build-kyvon-apk.yml'
   workflow_dispatch:
 
@@ -20,7 +19,10 @@ permissions:
 jobs:
   build-apk:
     runs-on: ubuntu-24.04
-    timeout-minutes: 35
+    timeout-minutes: 60
+    env:
+      CI: '1'
+      EXPO_NO_TELEMETRY: '1'
     steps:
       - name: Baixar codigo
         uses: actions/checkout@v4
@@ -34,18 +36,8 @@ jobs:
       - name: Instalar dependencias
         run: npm ci
 
-      - name: Exportar aplicativo web
-        run: npm run export:web
-
-      - name: Testar interface exportada no Chrome
-        run: |
-          npm install --no-save --ignore-scripts puppeteer-core@24
-          node ci/check-web.cjs
-
-      - name: Incluir web app no Android
-        run: |
-          mkdir -p android-preview/build/web-assets
-          cp -R dist/. android-preview/build/web-assets/
+      - name: Verificar TypeScript
+        run: npm run typecheck
 
       - name: Preparar Java
         uses: actions/setup-java@v4
@@ -53,30 +45,50 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      - name: Instalar plataforma Android
-        run: |
-          SDKMANAGER=$(find /usr/local/lib/android/sdk /opt/android-sdk -name sdkmanager -type f 2>/dev/null | head -n 1)
-          test -n "$SDKMANAGER"
-          export ANDROID_HOME=/usr/local/lib/android/sdk
-          export ANDROID_SDK_ROOT="$ANDROID_HOME"
-          yes | "$SDKMANAGER" --licenses >/dev/null || true
-          "$SDKMANAGER" 'platforms;android-35' 'build-tools;35.0.0'
+      - name: Preparar Android SDK
+        uses: android-actions/setup-android@v3
+        with:
+          packages: 'platform-tools platforms;android-36 build-tools;36.0.0'
 
       - name: Preparar Gradle
         uses: gradle/actions/setup-gradle@v4
-        with:
-          gradle-version: '8.10.2'
 
-      - name: Compilar APK de teste
-        run: gradle -p android-preview assembleDebug --stacktrace --no-daemon
+      - name: Gerar projeto Android NATIVO
+        run: npx expo prebuild --platform android --clean --no-install
+
+      # assembleRelease embeds the JavaScript/Hermes bundle in the APK.
+      # A debug APK would depend on a Metro server and fail on users' phones.
+      - name: Compilar APK autonomo com JS integrado
+        run: cd android && ./gradlew :app:assembleRelease --no-daemon --stacktrace
 
       - name: Copiar APK
         run: |
           mkdir -p output
-          APK=$(find android-preview/build/outputs/apk -name '*.apk' -type f | head -n 1)
+          APK=$(find android/app/build/outputs/apk/release -name '*.apk' -type f | head -n 1)
           test -n "$APK"
           cp "$APK" output/KYVON-beta.apk
           ls -lh output/KYVON-beta.apk
+
+      - name: Testar abertura do KYVON em emulador Android
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          target: google_apis
+          arch: x86_64
+          profile: pixel_3a
+          disable-animations: true
+          script: |
+            adb install -r output/KYVON-beta.apk
+            adb logcat -c
+            adb shell am start -n com.aureliorm.meucontrole/.MainActivity
+            sleep 20
+            echo "Android runtime errors:"
+            adb logcat -d -s AndroidRuntime:E ReactNativeJS:E ReactNative:E || true
+            echo "App process:"
+            adb shell pidof com.aureliorm.meucontrole
+            adb shell uiautomator dump /sdcard/kyvon-ui.xml
+            adb shell cat /sdcard/kyvon-ui.xml | grep -q 'KYVON'
+            echo "KYVON Android launch smoke test PASS"
 
       - name: Guardar APK
         uses: actions/upload-artifact@v4
@@ -89,9 +101,9 @@ jobs:
         if: github.ref == 'refs/heads/main'
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: kyvon-beta-v1.3.2
-          name: KYVON beta v1.3.2
-          body: 'APK de testes do KYVON. Build de desenvolvimento, para instalar manualmente no Android. Não é uma versão publicada na Play Store.'
+          tag_name: kyvon-beta-v1.4.0
+          name: KYVON beta v1.4.0 (Android nativo)
+          body: 'APK de testes nativo. JavaScript/Hermes integrado; dispensa servidor Metro e WebView. Versão de desenvolvimento, não publicada na Play Store. Se já tiver APK assinado com outra chave, desinstale a versão antiga antes de instalar.'
           prerelease: true
           files: output/KYVON-beta.apk
           fail_on_unmatched_files: true
