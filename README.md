@@ -1,43 +1,29 @@
-# KYVON
+# KYVON — beta 1.5.0
 
-Aplicativo de finanças pessoais com visual escuro, gastos, limite diário e semanal, reserva e assistente baseado em regras.
+Controle financeiro pessoal para Android e iOS desenvolvido em React Native/Expo.
 
-## APK Android beta v1.4.0
-O APK de teste é agora **nativo React Native/Expo**, não usa WebView para renderizar o aplicativo e incorpora o pacote JavaScript/Hermes ao arquivo de instalação. Funciona sem servidor Metro e não depende do Android System WebView para mostrar a interface.
+## Reconstrução do lançamento
+- O Android usa **React Native nativo**, não depende de WebView, servidor Metro ou página remota.
+- O aplicativo exibe um **estado de recuperação** se alguma tela falhar ao renderizar.
+- O carregamento dos registros locais é defensivo: JSON inválido e despesas antigas malformadas não deixam a aplicativo preso em "Carregando".
+- Antes de reparar registros, o dado bruto anterior é preservado numa chave de backup local.
+- A interface apresenta uma identidade visual preta e dourada, painel de orçamento, atalhos, visão semanal, categorias, histórico, reserva, assistente local e ajustes.
+- Não há conexão bancária, telemetria, login, sincronização em nuvem ou um LLM remoto ativo. Os plugins de desenvolvimento do ChatGPT **não são SDKs do aplicativo**.
 
-A rotina GitHub Actions **Gerar APK KYVON**:
-1. Verifica o código TypeScript;
-2. Gera o projeto Android com `npx expo prebuild --platform android --clean --no-install`;
-3. Executa `./gradlew :app:assembleRelease` para incluir o JavaScript no APK;
-4. Verifica integridade do APK e presença do bundle React Native integrado;
-5. Publica o APK em **Releases**, na versão `kyvon-beta-v1.4.0`.
+## Baixar e instalar
+Abra [Releases](https://github.com/aureliorochamiranda231-ctrl/meu-controle-financeiro1/releases), procure `kyvon-beta-v1.5.0` e instale `KYVON-beta.apk` no Android. A publicação depende da conclusão do GitHub Actions.
 
-O teste de inicialização em emulador foi temporariamente retirado do bloqueio de publicação porque o runner GitHub não conseguiu inicializar o emulador (problema do ambiente de teste, não evidência de erro no APK). A compilação e a verificação estática não substituem um teste num celular real.
+**Importante:** a compilação não prova o funcionamento num celular real. Faça o teste inicial antes de registrar dados pessoais. Se precisar desinstalar uma versão assinada com outra chave, copie primeiro seus registros, pois a remoção apaga os dados locais.
 
-**Atenção:** o APK de testes usa chave de desenvolvimento gerada no ambiente de build. Se uma versão anterior tiver assinatura diferente, desinstale-a antes da instalação. Isso remove os dados locais dessa versão: exporte ou anote as informações importantes antes.
-
-## Executar na máquina de desenvolvimento
-
-Instale Node.js 22+ e execute:
+## Desenvolvimento
 ```sh
 npm ci
-npm start
-```
-Use Expo Go compatível com o SDK do projeto para testes de desenvolvimento. O APK distribuído pelo GitHub é **release standalone** e não precisa de Expo Go.
-
-Verificações:
-```sh
 npm run typecheck
+npm run test:unit
 npm run export:web
 ```
 
-## Dados e assistente
+O GitHub Actions gera um APK release independente por `expo prebuild` e `assembleRelease`, valida a presença do bundle JavaScript e publica uma beta no GitHub Releases. As verificações automáticas não substituem o teste de abertura em um aparelho Android.
 
-Na aba **Ajustes**, defina orçamento mensal, limites e meta de reserva.
-Os lançamentos ficam em armazenamento local no aparelho: não há conta, backup, sincronização em nuvem nem conexão bancária. Desinstalar ou limpar dados remove os registros.
-
-O assistente local interpreta perguntas e comandos financeiros, propõe alterações que exigem confirmação e consulta Selic, IPCA e dólar ao Banco Central por HTTPS. Não é um modelo de IA conversacional hospedado.
-
-## Identidade visual
-
-Ícone dourado com letra **K** em fundo preto. O aplicativo é disponibilizado em versão beta, não na Play Store.
+## Privacidade e futuras integrações
+Supabase e PostHog estão disponíveis no ChatGPT, mas **não foram conectados ao app**. Não adicionar chaves secretas no repositório público nem enviar dados financeiros para serviços externos sem autorização, autenticação e RLS por usuário.

@@ -1,4 +1,4 @@
-// KYVON: verify UI on Chrome; Android uses the WebViewAssetLoader beta startup check.
+// KYVON: offline-first React Native app; no WebView is used in the standalone APK.
 import React, { useEffect, useRef, useState } from "react";
 import {
   Alert, KeyboardAvoidingView, Linking, Platform, ScrollView,
@@ -12,18 +12,10 @@ import { answerQuestion, categories, suggestedQuestions, type AppData, type Expe
 
 import { applyAction, parseAction, type AssistantAction } from "./src/assistantActions";
 import { detectIndicator, readIndicator } from "./src/publicIndicators";
+import StartupBoundary from "./src/StartupBoundary";
+import { initialData, restoreSavedData } from "./src/persistence";
 
 const KEY = "@meu_controle_v1";
-const initialData: AppData = {
-  monthlyIncome: 0,
-  budget: 0,
-  weeklyLimit: 0,
-  dailyLimit: 0,
-  reserve: 0,
-  goalTarget: 0,
-  expenses: [],
-  goals: []
-};
 
 function inform(title: string, message: string) {
   if (Platform.OS === "web") window.alert(`${title}\n${message}`);
@@ -44,13 +36,15 @@ function confirmAction(title: string, message: string, label: string, action: ()
 type Tab = "home" | "expenses" | "goals" | "settings" | "assistant";
 
 export default function App() {
-  return <SafeAreaProvider><FinanceApp /></SafeAreaProvider>;
+  return <StartupBoundary><SafeAreaProvider><FinanceApp /></SafeAreaProvider></StartupBoundary>;
 }
 
 function FinanceApp() {
   const scrollRef = useRef<React.ComponentRef<typeof ScrollView>>(null);
   const [data, setData] = useState<AppData>(initialData);
   const [loaded, setLoaded] = useState(false);
+  const [canSave, setCanSave] = useState(false);
+  const [storageWarning, setStorageWarning] = useState<string | null>(null);
   const [tab, setTab] = useState<Tab>("home");
   const [today, setToday] = useState(() => new Date());
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -78,23 +72,40 @@ function FinanceApp() {
   }, []);
 
   useEffect(() => {
+    let active = true;
     (async () => {
       try {
         const saved = await AsyncStorage.getItem(KEY);
-        if (saved) setData({ ...initialData, ...JSON.parse(saved) });
-      } catch {
-        inform("Atenção", "Não foi possível carregar os dados salvos.");
-        return;
+        const restored = restoreSavedData(saved);
+        // Preserve the original raw records before repairing malformed data.
+        if (saved && restored.warning) {
+          await AsyncStorage.setItem(KEY + "_backup_" + Date.now(), saved);
+        }
+        if (active) {
+          setData(restored.data);
+          setStorageWarning(restored.warning);
+          setCanSave(true);
+        }
+      } catch (error) {
+        console.error("[KYVON] Storage initialization:", error);
+        if (active) {
+          setStorageWarning("O armazenamento local não pôde ser aberto. Por segurança, esta sessão não sobrescreverá seus dados.");
+          setCanSave(false);
+        }
+      } finally {
+        if (active) setLoaded(true);
       }
-      setLoaded(true);
     })();
+    return () => { active = false; };
   }, []);
 
   useEffect(() => {
-    if (loaded) AsyncStorage.setItem(KEY, JSON.stringify(data)).catch(() =>
-      inform("Erro", "Não foi possível salvar seus dados neste aparelho.")
-    );
-  }, [data, loaded]);
+    if (loaded && canSave) AsyncStorage.setItem(KEY, JSON.stringify(data)).catch(error => {
+      console.error("[KYVON] Persisting data:", error);
+      setCanSave(false);
+      setStorageWarning("Não foi possível salvar alterações neste aparelho. Confira o espaço disponível.");
+    });
+  }, [data, loaded, canSave]);
 
   useEffect(() => {
     setIncomeInput(data.monthlyIncome ? String(data.monthlyIncome).replace(".", ",") : "");
@@ -111,10 +122,15 @@ function FinanceApp() {
     return date >= weekStart && date < weekEnd;
   });
   const [monthStart, monthEnd] = monthBounds(today);
-  const spent = sumExpenses(data.expenses.filter(item => {
+  const monthExpenses = data.expenses.filter(item => {
     const date = new Date(item.date);
     return date >= monthStart && date < monthEnd;
-  }));
+  });
+  const spent = sumExpenses(monthExpenses);
+  const categoryRanking = categories.map(name => ({
+    name, amount: sumExpenses(monthExpenses.filter(item => item.category === name))
+  })).filter(item => item.amount > 0).sort((a, b) => b.amount - a.amount).slice(0, 4);
+  const maxCategory = Math.max(1, ...categoryRanking.map(item => item.amount));
   const weeklySpent = sumExpenses(weekExpenses);
   const [dayStart, dayEnd] = dayBounds(today);
   const dailySpent = sumExpenses(weekExpenses.filter(item => {
@@ -272,24 +288,45 @@ function FinanceApp() {
     <SafeAreaView style={styles.container}>
       <StatusBar barStyle="light-content" />
       <View style={styles.header}>
-        <View>
-          <Text style={styles.brand}>KYVON</Text>
-          <Text style={styles.subtitle}>Inteligência financeira</Text>
+        <View style={styles.brandGroup}>
+          <View style={styles.brandMark}><Text style={styles.brandLetter}>K</Text></View>
+          <View>
+            <Text style={styles.brand}>KYVON</Text>
+            <Text style={styles.subtitle}>SEU PATRIMÔNIO, SEU CONTROLE</Text>
+          </View>
         </View>
-        <View style={styles.avatar}><Ionicons name="wallet-outline" size={22} color="#65D6A2" /></View>
+        <TouchableOpacity accessibilityLabel="Abrir planejamento" onPress={() => setTab("settings")} style={styles.avatar}>
+          <Ionicons name="options-outline" size={21} color="#D9B678" />
+        </TouchableOpacity>
       </View>
 
+      {storageWarning && <View accessibilityRole="alert" style={styles.warningBanner}>
+        <Ionicons name="alert-circle-outline" color="#F6C679" size={19} />
+        <Text style={styles.warningText}>{storageWarning}</Text>
+      </View>}
       <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === "ios" ? "padding" : undefined}>
         <ScrollView key={tab} ref={scrollRef} onContentSizeChange={tab === "assistant" && conversation.length ? () => scrollRef.current?.scrollToEnd({ animated: true }) : undefined} contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
           {tab === "home" && <>
+            <View style={styles.welcomeRow}>
+              <View>
+                <Text style={styles.welcomeLabel}>SEU PAINEL FINANCEIRO</Text>
+                <Text style={styles.welcomeTitle}>Visão geral</Text>
+              </View>
+              <View style={styles.privateTag}><Ionicons name="lock-closed-outline" size={12} color="#D9B678" /><Text style={styles.privateTagText}>Local e privado</Text></View>
+            </View>
             <View style={styles.hero}>
-              <Text style={styles.eyebrow}>ORÇAMENTO DESTE MÊS</Text>
+              <View style={styles.heroTop}><Text style={styles.eyebrow}>SALDO DO ORÇAMENTO</Text><Ionicons name="sparkles-outline" size={21} color="#D9B678" /></View>
               <Text style={[styles.heroValue, data.budget > 0 && available < 0 && styles.overLimit]}>{data.budget > 0 ? money(available) : "Sem orçamento"}</Text>
               <Text style={styles.heroNote}>{data.budget > 0 ? `Limite mensal de ${money(data.budget)}` : "Configure um valor em Ajustes."}</Text>
               <View style={styles.progressTrack}><View style={[styles.progressFill, { width: `${data.budget > 0 ? Math.min(100, spent / data.budget * 100) : 0}%` }]} /></View>
               <Text style={styles.heroNote}>{data.budget > 0 ? `${Math.round(spent / data.budget * 100)}% do orçamento utilizado` : ""}</Text>
             </View>
 
+            <View style={styles.quickActions}>
+              <QuickAction icon="add-outline" label="Novo gasto" onPress={() => setTab("expenses")} />
+              <QuickAction icon="shield-checkmark-outline" label="Minha reserva" onPress={() => setTab("goals")} />
+              <QuickAction icon="chatbubble-ellipses-outline" label="Assistente" onPress={() => setTab("assistant")} />
+            </View>
             <View style={styles.panel}>
               <Text style={styles.sectionTitle}>Limite semanal</Text>
               <Text style={styles.bodyText}>{money(weeklySpent)} em gastos nesta semana</Text>
@@ -311,17 +348,33 @@ function FinanceApp() {
             <Text style={styles.sectionTitle}>Visão geral</Text>
             <View style={styles.statsRow}>
               <View style={styles.statCard}>
-                <Ionicons name="trending-down-outline" size={20} color="#FF8585" />
+                <Ionicons name="trending-down-outline" size={20} color="#FE939C" />
                 <Text style={styles.statLabel}>Gastos do mês</Text>
                 <Text style={styles.statValue}>{money(spent)}</Text>
               </View>
               <View style={styles.statCard}>
-                <Ionicons name="shield-checkmark-outline" size={20} color="#65D6A2" />
+                <Ionicons name="shield-checkmark-outline" size={20} color="#D9B678" />
                 <Text style={styles.statLabel}>Reserva atual</Text>
-                <Text style={[styles.statValue, { color: "#65D6A2" }]}>{money(data.reserve)}</Text>
+                <Text style={[styles.statValue, { color: "#D9B678" }]}>{money(data.reserve)}</Text>
               </View>
             </View>
 
+            <View style={styles.panel}>
+              <View style={styles.sectionHeader}>
+                <Text style={styles.sectionTitle}>Onde você gastou</Text>
+                <Ionicons name="stats-chart-outline" size={18} color="#D9B678" />
+              </View>
+              {categoryRanking.length === 0
+                ? <Text style={styles.bodyText}>Registre despesas para acompanhar a distribuição por categoria.</Text>
+                : categoryRanking.map(item => <View key={item.name} style={styles.categoryBlock}>
+                  <View style={styles.categoryLine}>
+                    <Text style={styles.categoryName}>{item.name}</Text>
+                    <Text style={styles.categoryAmount}>{money(item.amount)}</Text>
+                  </View>
+                  <View style={styles.categoryTrack}><View style={[styles.categoryFill,{width:`${Math.round(item.amount / maxCategory * 100)}%`}]} /></View>
+                </View>)
+              }
+            </View>
             <View style={styles.sectionHeader}>
               <Text style={styles.sectionTitle}>Últimas despesas</Text>
               <TouchableOpacity onPress={() => setTab("expenses")}><Text style={styles.link}>Ver todas</Text></TouchableOpacity>
@@ -332,7 +385,7 @@ function FinanceApp() {
             }
 
             <TouchableOpacity style={styles.primaryButton} onPress={() => setTab("expenses")}>
-              <Ionicons name="add-circle-outline" size={20} color="#07130E" />
+              <Ionicons name="add-circle-outline" size={20} color="#17120A" />
               <Text style={styles.primaryButtonText}>Registrar despesa</Text>
             </TouchableOpacity>
           </>}
@@ -342,9 +395,9 @@ function FinanceApp() {
             <Text style={styles.pageSubtitle}>Registre seus gastos para acompanhar seu orçamento.</Text>
             <View style={styles.panel}>
               <Text style={styles.label}>O que você pagou?</Text>
-              <TextInput value={title} onChangeText={setTitle} accessibilityLabel="Descrição da despesa" placeholder="Ex.: mercado, passagem..." placeholderTextColor="#718092" style={styles.input} />
+              <TextInput value={title} onChangeText={setTitle} accessibilityLabel="Descrição da despesa" placeholder="Ex.: mercado, passagem..." placeholderTextColor="#838997" style={styles.input} />
               <Text style={styles.label}>Valor (R$)</Text>
-              <TextInput accessibilityLabel="Valor da despesa" value={amount} onChangeText={setAmount} placeholder="0,00" placeholderTextColor="#718092" keyboardType="decimal-pad" style={styles.input} />
+              <TextInput accessibilityLabel="Valor da despesa" value={amount} onChangeText={setAmount} placeholder="0,00" placeholderTextColor="#838997" keyboardType="decimal-pad" style={styles.input} />
               <Text style={styles.label}>Categoria</Text>
               <View style={styles.chips}>
                 {categories.map(c => <TouchableOpacity key={c} onPress={() => setCategory(c)} style={[styles.chip, category === c && styles.chipActive]}><Text style={[styles.chipText, category === c && styles.chipTextActive]}>{c}</Text></TouchableOpacity>)}
@@ -375,7 +428,7 @@ function FinanceApp() {
             <Text style={styles.pageTitle}>Reserva de emergência</Text>
             <Text style={styles.pageSubtitle}>Construa sua segurança financeira, um passo de cada vez.</Text>
             <View style={styles.goalCard}>
-              <View style={styles.goalIcon}><Ionicons name="shield-checkmark" size={25} color="#65D6A2" /></View>
+              <View style={styles.goalIcon}><Ionicons name="shield-checkmark" size={25} color="#D9B678" /></View>
               <Text style={styles.eyebrow}>VALOR GUARDADO</Text>
               <Text style={styles.goalValue}>{money(data.reserve)}</Text>
               <Text style={styles.heroNote}>{data.goalTarget > 0 ? `Meta de ${money(data.goalTarget)}` : "Defina uma meta em Ajustes."}</Text>
@@ -428,7 +481,7 @@ function FinanceApp() {
                 value={question}
                 onChangeText={setQuestion}
                 placeholder="Ex.: registre R$ 30,00 em mercado"
-                placeholderTextColor="#9BA8B6"
+                placeholderTextColor="#B0ADB2"
                 maxLength={300}
                 returnKeyType="send"
                 onSubmitEditing={() => askAssistant(question)}
@@ -440,7 +493,7 @@ function FinanceApp() {
                 style={[styles.primaryButton, (!question.trim() || !!pending || onlineBusy) && styles.disabledButton]}
                 onPress={() => askAssistant(question)}
               >
-                <Ionicons name="send-outline" size={16} color="#07130E" />
+                <Ionicons name="send-outline" size={16} color="#17120A" />
                 <Text style={styles.primaryButtonText}>Enviar pergunta</Text>
               </TouchableOpacity>
               {conversation.length > 0 && <TouchableOpacity accessibilityRole="button" onPress={clearConversation}>
@@ -483,8 +536,15 @@ function FinanceApp() {
   );
 }
 
+function QuickAction({ icon, label, onPress }: { icon: keyof typeof Ionicons.glyphMap; label: string; onPress: () => void }) {
+  return <TouchableOpacity accessibilityRole="button" accessibilityLabel={label} onPress={onPress} style={styles.quickAction}>
+    <View style={styles.quickIcon}><Ionicons name={icon} size={21} color="#D9B678" /></View>
+    <Text style={styles.quickLabel}>{label}</Text>
+  </TouchableOpacity>;
+}
+
 function Field({ label, value, onChange }: { label: string; value: string; onChange: (v: string) => void }) {
-  return <View style={{ marginBottom: 16 }}><Text style={styles.label}>{label}</Text><TextInput accessibilityLabel={label} value={value} onChangeText={onChange} placeholder="0,00" placeholderTextColor="#718092" keyboardType="decimal-pad" style={styles.input} /></View>;
+  return <View style={{ marginBottom: 16 }}><Text style={styles.label}>{label}</Text><TextInput accessibilityLabel={label} value={value} onChangeText={onChange} placeholder="0,00" placeholderTextColor="#838997" keyboardType="decimal-pad" style={styles.input} /></View>;
 }
 function ExpenseRow({ item }: { item: Expense }) {
   return <View style={styles.expenseRow}>
@@ -494,69 +554,90 @@ function ExpenseRow({ item }: { item: Expense }) {
   </View>;
 }
 function EmptyState({ text }: { text: string }) {
-  return <View style={styles.empty}><Ionicons name="file-tray-outline" size={25} color="#718092" /><Text style={styles.emptyText}>{text}</Text></View>;
+  return <View style={styles.empty}><Ionicons name="file-tray-outline" size={25} color="#838997" /><Text style={styles.emptyText}>{text}</Text></View>;
 }
 function TabButton({ icon, label, active, onPress }: { icon: keyof typeof Ionicons.glyphMap; label: string; active: boolean; onPress: () => void }) {
-  return <TouchableOpacity accessibilityRole="button" accessibilityState={{ selected: active }} onPress={onPress} style={styles.tabButton}><Ionicons name={icon} size={21} color={active ? "#65D6A2" : "#718092"} /><Text style={[styles.tabLabel, active && { color: "#65D6A2" }]}>{label}</Text></TouchableOpacity>;
+  return <TouchableOpacity accessibilityRole="button" accessibilityState={{ selected: active }} onPress={onPress} style={styles.tabButton}><Ionicons name={icon} size={21} color={active ? "#D9B678" : "#838997"} /><Text style={[styles.tabLabel, active && { color: "#D9B678" }]}>{label}</Text></TouchableOpacity>;
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: "#0B1118" },
+  container: { flex: 1, backgroundColor: "#090A0E" },
   loading: { color: "#FFFFFF", textAlign: "center", marginTop: 80 },
   header: { paddingHorizontal: 22, paddingTop: 12, paddingBottom: 14, flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
-  brand: { color: "#65D6A2", fontSize: 19, fontWeight: "900", letterSpacing: 1.3 },
-  subtitle: { color: "#8996A5", fontSize: 12, marginTop: 4 },
-  avatar: { width: 42, height: 42, borderRadius: 15, backgroundColor: "#17252B", alignItems: "center", justifyContent: "center" },
+  brand: { color: "#F6F1E5", fontSize: 19, fontWeight: "900", letterSpacing: 2.5 },
+  brandGroup: { flexDirection: "row", alignItems: "center", gap: 12 },
+  brandMark: { width: 42, height: 42, borderRadius: 13, backgroundColor: "#282319", alignItems: "center", justifyContent: "center", borderWidth: 1, borderColor: "#5B4C2C" },
+  brandLetter: { color: "#D9B678", fontSize: 25, fontWeight: "900" },
+  warningBanner: { flexDirection: "row", alignItems: "flex-start", gap: 9, backgroundColor: "#392D20", paddingHorizontal: 18, paddingVertical: 11, borderBottomWidth: 1, borderBottomColor: "#6A5131" },
+  warningText: { color: "#F6D8A4", fontSize: 12, lineHeight: 18, flex: 1 },
+  welcomeRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 19, gap: 6 },
+  welcomeLabel: { color: "#9E9586", fontSize: 10, fontWeight: "800", letterSpacing: 1.5 },
+  welcomeTitle: { color: "#FAF8F4", fontSize: 26, fontWeight: "800", marginTop: 5 },
+  privateTag: { flexDirection: "row", alignItems: "center", gap: 5, paddingHorizontal: 9, paddingVertical: 8, borderRadius: 20, backgroundColor: "#282319" },
+  privateTagText: { color: "#D9B678", fontSize: 10, fontWeight: "700" },
+  heroTop: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
+  quickActions: { flexDirection: "row", justifyContent: "space-between", gap: 10, marginTop: -10, marginBottom: 20 },
+  quickAction: { flex: 1, alignItems: "center", backgroundColor: "#171923", paddingVertical: 14, paddingHorizontal: 5, borderRadius: 18, borderWidth: 1, borderColor: "#292A31" },
+  quickIcon: { width: 39, height: 39, borderRadius: 13, backgroundColor: "#30291D", justifyContent: "center", alignItems: "center", marginBottom: 8 },
+  quickLabel: { color: "#DFDBD4", fontSize: 11, fontWeight: "700" },
+  categoryBlock: { marginTop: 7, marginBottom: 12 },
+  categoryLine: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
+  categoryName: { color: "#D8D9DC", fontSize: 12 },
+  categoryAmount: { color: "#F2E8D2", fontSize: 12, fontWeight: "700" },
+  categoryTrack: { height: 6, borderRadius: 6, backgroundColor: "#30303B", overflow: "hidden", marginTop: 9 },
+  categoryFill: { height: 6, borderRadius: 6, backgroundColor: "#B79A65" },
+  subtitle: { color: "#9B9AA6", fontSize: 9, marginTop: 4, letterSpacing: 0.7 },
+  avatar: { width: 42, height: 42, borderRadius: 15, backgroundColor: "#191A21", alignItems: "center", justifyContent: "center" },
   content: { padding: 20, paddingBottom: 30 },
-  hero: { backgroundColor: "#17252B", borderRadius: 22, padding: 22, marginBottom: 27, borderWidth: 1, borderColor: "#223A37" },
+  hero: { backgroundColor: "#191A21", borderRadius: 22, padding: 22, marginBottom: 27, borderWidth: 1, borderColor: "#37312A" },
   eyebrow: { color: "#9BAEAA", fontSize: 10, fontWeight: "800", letterSpacing: 1 },
-  heroValue: { color: "#65D6A2", fontSize: 34, fontWeight: "800", marginTop: 10, marginBottom: 7 },
-  heroNote: { color: "#9BA8B6", fontSize: 12, marginTop: 7 },
-  progressTrack: { height: 7, borderRadius: 10, backgroundColor: "#293640", overflow: "hidden", marginTop: 17 },
-  progressFill: { height: 7, borderRadius: 10, backgroundColor: "#65D6A2" },
+  heroValue: { color: "#D9B678", fontSize: 34, fontWeight: "800", marginTop: 10, marginBottom: 7 },
+  heroNote: { color: "#B0ADB2", fontSize: 12, marginTop: 7 },
+  progressTrack: { height: 7, borderRadius: 10, backgroundColor: "#30303B", overflow: "hidden", marginTop: 17 },
+  progressFill: { height: 7, borderRadius: 10, backgroundColor: "#D9B678" },
   sectionTitle: { color: "#F4F7FA", fontSize: 17, fontWeight: "700", marginBottom: 14 },
   statsRow: { flexDirection: "row", gap: 12, marginBottom: 27 },
-  statCard: { flex: 1, backgroundColor: "#17212C", borderRadius: 17, padding: 15, minHeight: 112 },
-  statLabel: { color: "#9BA8B6", fontSize: 11, marginTop: 9 },
-  statValue: { color: "#FF8585", fontSize: 16, fontWeight: "700", marginTop: 5 },
+  statCard: { flex: 1, backgroundColor: "#171923", borderRadius: 17, padding: 15, minHeight: 112 },
+  statLabel: { color: "#B0ADB2", fontSize: 11, marginTop: 9 },
+  statValue: { color: "#FE939C", fontSize: 16, fontWeight: "700", marginTop: 5 },
   sectionHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
-  link: { color: "#65D6A2", fontWeight: "600", fontSize: 12, marginBottom: 14 },
-  primaryButton: { backgroundColor: "#65D6A2", borderRadius: 14, minHeight: 51, alignItems: "center", justifyContent: "center", flexDirection: "row", gap: 8, marginTop: 15 },
-  primaryButtonText: { color: "#07130E", fontSize: 14, fontWeight: "800" },
+  link: { color: "#D9B678", fontWeight: "600", fontSize: 12, marginBottom: 14 },
+  primaryButton: { backgroundColor: "#D9B678", borderRadius: 14, minHeight: 51, alignItems: "center", justifyContent: "center", flexDirection: "row", gap: 8, marginTop: 15 },
+  primaryButtonText: { color: "#17120A", fontSize: 14, fontWeight: "800" },
   pageTitle: { color: "#F4F7FA", fontSize: 25, fontWeight: "800", marginBottom: 6 },
-  pageSubtitle: { color: "#8996A5", fontSize: 13, lineHeight: 19, marginBottom: 22 },
-  panel: { backgroundColor: "#17212C", borderRadius: 18, padding: 17, marginBottom: 20 },
+  pageSubtitle: { color: "#9B9AA6", fontSize: 13, lineHeight: 19, marginBottom: 22 },
+  panel: { backgroundColor: "#171923", borderRadius: 18, padding: 17, marginBottom: 20 },
   label: { color: "#C1CBD5", fontSize: 12, fontWeight: "600", marginBottom: 8 },
-  input: { backgroundColor: "#0E1721", color: "#FFFFFF", borderWidth: 1, borderColor: "#2A3948", borderRadius: 12, paddingHorizontal: 14, paddingVertical: 13, fontSize: 15, marginBottom: 16 },
+  input: { backgroundColor: "#11131A", color: "#FFFFFF", borderWidth: 1, borderColor: "#353745", borderRadius: 12, paddingHorizontal: 14, paddingVertical: 13, fontSize: 15, marginBottom: 16 },
   chips: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
   chip: { borderWidth: 1, borderColor: "#344352", borderRadius: 20, paddingHorizontal: 11, paddingVertical: 8 },
-  chipActive: { backgroundColor: "#214A3B", borderColor: "#65D6A2" },
+  chipActive: { backgroundColor: "#3E3223", borderColor: "#D9B678" },
   chipText: { color: "#AAB7C4", fontSize: 11 },
-  chipTextActive: { color: "#8CE8BC", fontWeight: "700" },
-  expenseRow: { backgroundColor: "#17212C", borderRadius: 14, padding: 13, marginBottom: 9, flexDirection: "row", alignItems: "center", gap: 11 },
-  expenseIcon: { width: 38, height: 38, borderRadius: 12, backgroundColor: "#253340", alignItems: "center", justifyContent: "center" },
+  chipTextActive: { color: "#F2D59B", fontWeight: "700" },
+  expenseRow: { backgroundColor: "#171923", borderRadius: 14, padding: 13, marginBottom: 9, flexDirection: "row", alignItems: "center", gap: 11 },
+  expenseIcon: { width: 38, height: 38, borderRadius: 12, backgroundColor: "#272934", alignItems: "center", justifyContent: "center" },
   expenseTitle: { color: "#F2F5F8", fontWeight: "700", fontSize: 13 },
-  expenseMeta: { color: "#8996A5", fontSize: 10, marginTop: 4 },
-  expenseAmount: { color: "#FF9292", fontSize: 12, fontWeight: "700" },
+  expenseMeta: { color: "#9B9AA6", fontSize: 10, marginTop: 4 },
+  expenseAmount: { color: "#FF9BA2", fontSize: 12, fontWeight: "700" },
   filters: { flexDirection: "row", flexWrap: "wrap", gap: 8, marginBottom: 14 },
   messageGroup: { gap: 8, marginBottom: 16 },
-  questionBubble: { backgroundColor: "#214A3B", alignSelf: "flex-end", maxWidth: "90%", borderRadius: 15, padding: 12 },
-  answerBubble: { backgroundColor: "#17212C", alignSelf: "flex-start", maxWidth: "94%", borderRadius: 15, padding: 14 },
+  questionBubble: { backgroundColor: "#3E3223", alignSelf: "flex-end", maxWidth: "90%", borderRadius: 15, padding: 12 },
+  answerBubble: { backgroundColor: "#171923", alignSelf: "flex-start", maxWidth: "94%", borderRadius: 15, padding: 14 },
   messageText: { color: "#F4F7FA", fontSize: 14, lineHeight: 21 },
   disabledButton: { opacity: 0.48 },
   clearConversation: { color: "#AAB7C4", textAlign: "center", paddingTop: 16, fontSize: 12 },
   expenseActions: { flexDirection: "row", gap: 18, justifyContent: "flex-end" },
-  weekBalance: { color: "#65D6A2", fontSize: 17, fontWeight: "700" },
-  overLimit: { color: "#FF9292" },
-  empty: { backgroundColor: "#17212C", borderRadius: 14, padding: 22, alignItems: "center", gap: 9, marginBottom: 15 },
-  emptyText: { color: "#8996A5", fontSize: 12, textAlign: "center", lineHeight: 18 },
-  goalCard: { backgroundColor: "#17252B", borderRadius: 22, padding: 22, marginBottom: 18, borderWidth: 1, borderColor: "#223A37" },
-  goalIcon: { width: 48, height: 48, borderRadius: 15, backgroundColor: "#214A3B", alignItems: "center", justifyContent: "center", marginBottom: 20 },
-  goalValue: { color: "#65D6A2", fontSize: 32, fontWeight: "800", marginTop: 9 },
-  goalPercent: { color: "#65D6A2", fontWeight: "700", fontSize: 12, marginTop: 12 },
+  weekBalance: { color: "#D9B678", fontSize: 17, fontWeight: "700" },
+  overLimit: { color: "#FF9BA2" },
+  empty: { backgroundColor: "#171923", borderRadius: 14, padding: 22, alignItems: "center", gap: 9, marginBottom: 15 },
+  emptyText: { color: "#9B9AA6", fontSize: 12, textAlign: "center", lineHeight: 18 },
+  goalCard: { backgroundColor: "#191A21", borderRadius: 22, padding: 22, marginBottom: 18, borderWidth: 1, borderColor: "#37312A" },
+  goalIcon: { width: 48, height: 48, borderRadius: 15, backgroundColor: "#3E3223", alignItems: "center", justifyContent: "center", marginBottom: 20 },
+  goalValue: { color: "#D9B678", fontSize: 32, fontWeight: "800", marginTop: 9 },
+  goalPercent: { color: "#D9B678", fontWeight: "700", fontSize: 12, marginTop: 12 },
   bodyText: { color: "#AAB7C4", fontSize: 13, lineHeight: 20, marginBottom: 10 },
-  dangerText: { color: "#FF8585", fontSize: 13, fontWeight: "700", marginTop: 18 },
-  tabBar: { flexDirection: "row", backgroundColor: "#111B25", borderTopWidth: 1, borderTopColor: "#24313E", paddingTop: 10, paddingBottom: Platform.OS === "ios" ? 20 : 10 },
+  dangerText: { color: "#FE939C", fontSize: 13, fontWeight: "700", marginTop: 18 },
+  tabBar: { flexDirection: "row", backgroundColor: "#0F1017", borderTopWidth: 1, borderTopColor: "#24313E", paddingTop: 10, paddingBottom: Platform.OS === "ios" ? 20 : 10 },
   tabButton: { flex: 1, alignItems: "center", justifyContent: "center", gap: 4 },
-  tabLabel: { color: "#718092", fontSize: 10, fontWeight: "600" }
+  tabLabel: { color: "#838997", fontSize: 10, fontWeight: "600" }
 });

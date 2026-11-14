@@ -10,6 +10,7 @@ on:
       - 'app.json'
       - 'package.json'
       - 'package-lock.json'
+      - 'ci/**'
       - '.github/workflows/build-kyvon-apk.yml'
   workflow_dispatch:
 
@@ -38,6 +39,9 @@ jobs:
 
       - name: Verificar TypeScript
         run: npm run typecheck
+
+      - name: Testar recuperação dos dados
+        run: npm run test:unit
 
       - name: Preparar Java
         uses: actions/setup-java@v4
@@ -89,8 +93,8 @@ jobs:
         if: github.ref == 'refs/heads/main'
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: kyvon-beta-v1.4.0
-          name: KYVON beta v1.4.0 (Android nativo)
+          tag_name: kyvon-beta-v1.5.0
+          name: KYVON beta v1.5.0 (Android nativo)
           body: 'APK de testes nativo. JavaScript/Hermes integrado; dispensa servidor Metro e WebView. Versão de desenvolvimento, não publicada na Play Store. Se já tiver APK assinado com outra chave, desinstale a versão antiga antes de instalar.'
           prerelease: true
           files: output/KYVON-beta.apk
