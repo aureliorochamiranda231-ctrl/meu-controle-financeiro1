@@ -24,12 +24,12 @@ export default class StartupBoundary extends React.Component<Props, State> {
   }
 }
 const styles = StyleSheet.create({
-  screen: { flexGrow: 1, backgroundColor: "#090A0E", padding: 30, justifyContent: "center", alignItems: "center" },
-  mark: { width: 72, height: 72, borderRadius: 24, backgroundColor: "#25211A", alignItems: "center", justifyContent: "center" },
-  k: { fontSize: 46, fontWeight: "900", color: "#D9B678" },
-  title: { color: "#D9B678", fontSize: 24, fontWeight: "900", letterSpacing: 3, marginTop: 18 },
-  heading: { color: "#F9F7F1", fontSize: 21, fontWeight: "700", marginTop: 28, textAlign: "center" },
-  description: { color: "#A6A7B0", fontSize: 14, lineHeight: 23, marginTop: 12, textAlign: "center" },
-  button: { backgroundColor: "#D9B678", borderRadius: 16, paddingVertical: 17, paddingHorizontal: 34, marginTop: 28 },
-  buttonText: { color: "#17120A", fontWeight: "900" }
+  screen: { flexGrow: 1, backgroundColor: "#F6F8FC", padding: 30, justifyContent: "center", alignItems: "center" },
+  mark: { width: 72, height: 72, borderRadius: 24, backgroundColor: "#E6EFFF", alignItems: "center", justifyContent: "center" },
+  k: { fontSize: 46, fontWeight: "900", color: "#2563EB" },
+  title: { color: "#2563EB", fontSize: 24, fontWeight: "900", letterSpacing: 3, marginTop: 18 },
+  heading: { color: "#17253B", fontSize: 21, fontWeight: "700", marginTop: 28, textAlign: "center" },
+  description: { color: "#697A94", fontSize: 14, lineHeight: 23, marginTop: 12, textAlign: "center" },
+  button: { backgroundColor: "#2563EB", borderRadius: 16, paddingVertical: 17, paddingHorizontal: 34, marginTop: 28 },
+  buttonText: { color: "#FFFFFF", fontWeight: "900" }
 });
