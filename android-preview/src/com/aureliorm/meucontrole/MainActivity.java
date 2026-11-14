@@ -7,6 +7,9 @@ import android.content.ActivityNotFoundException;
 import android.net.Uri;
 import android.os.Bundle;
 import android.webkit.WebChromeClient;
+import android.webkit.ConsoleMessage;
+import android.webkit.WebResourceError;
+import android.widget.Toast;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
 import android.webkit.WebResourceRequest;
@@ -39,12 +42,21 @@ public final class MainActivity extends Activity {
         view.getSettings().setAllowFileAccess(false);
         view.getSettings().setAllowContentAccess(false);
         view.getSettings().setBlockNetworkLoads(false);
-        view.setWebChromeClient(new WebChromeClient());
+        view.setWebChromeClient(new WebChromeClient() {
+            @Override
+            public boolean onConsoleMessage(ConsoleMessage message) {
+                android.util.Log.e("KYVON-Web", message.message() + " (" + message.sourceId() + ":" + message.lineNumber() + ")");
+                return true;
+            }
+        });
         view.setWebViewClient(new WebViewClient() {
             @Override
             public boolean shouldOverrideUrlLoading(WebView webView, WebResourceRequest request) {
                 Uri url = request.getUrl();
-                if (request.hasGesture() && "https".equals(url.getScheme()) && "api.bcb.gov.br".equals(url.getHost())) {
+                if ("https".equals(url.getScheme()) && "appassets.androidplatform.net".equals(url.getHost())) {
+                    return false;
+                }
+                if (request.hasGesture() && "https".equals(url.getScheme())) {
                     try {
                         startActivity(new Intent(Intent.ACTION_VIEW, url));
                     } catch (ActivityNotFoundException ignored) {}
@@ -56,7 +68,7 @@ public final class MainActivity extends Activity {
             public WebResourceResponse shouldInterceptRequest(WebView webView, WebResourceRequest request) {
                 Uri url = request.getUrl();
                 if ("data".equals(url.getScheme())) return null;
-                if (!"https".equals(url.getScheme()) || !"meucontrole.local".equals(url.getHost()) || !"GET".equals(request.getMethod())) {
+                if (!"https".equals(url.getScheme()) || !"appassets.androidplatform.net".equals(url.getHost()) || !"GET".equals(request.getMethod())) {
                     return response(403, "Blocked", new byte[0]);
                 }
                 String path = url.getPath();
@@ -66,19 +78,24 @@ public final class MainActivity extends Activity {
                 }
                 return readWebAsset(path);
             }
+
+            @Override
+            public void onReceivedError(WebView webView, WebResourceRequest request, WebResourceError error) {
+                if (request.isForMainFrame()) {
+                    showStartupError(webView);
+                }
+            }
         });
         setContentView(view);
-        try (InputStream source = getAssets().open("index.html")) {
-            ByteArrayOutputStream contents = new ByteArrayOutputStream();
-            byte[] buffer = new byte[8192];
-            int read;
-            while ((read = source.read(buffer)) != -1) contents.write(buffer, 0, read);
-            String html = new String(contents.toByteArray(), StandardCharsets.UTF_8);
-            view.loadDataWithBaseURL("https://meucontrole.local/", html, "text/html", "UTF-8", null);
-        } catch (IOException error) {
-            view.loadData("<p>Não foi possível abrir o KYVON.</p>", "text/html", "UTF-8");
-        }
+        // Load the app HTML and JS from the same, secure origin instead of
+        // using loadDataWithBaseURL, which can leave WebViews with a blank page.
+        view.loadUrl("https://appassets.androidplatform.net/index.html");
     }
+    private void showStartupError(WebView view) {
+        Toast.makeText(this, "Não foi possível carregar a interface do KYVON. Verifique a versão instalada.", Toast.LENGTH_LONG).show();
+        view.loadData("<html><body style='background:#060708;color:#e7c77d;font-family:sans-serif;padding:32px'><h2>KYVON</h2><p>Falha ao carregar o aplicativo. Instale a versão beta mais recente.</p></body></html>", "text/html", "UTF-8");
+    }
+
     private WebResourceResponse readWebAsset(String path) {
         if (path == null || !path.startsWith("/") || path.contains("..") || path.contains("\\\\") || path.contains("\\0")) {
             return response(403, "Forbidden", new byte[0]);

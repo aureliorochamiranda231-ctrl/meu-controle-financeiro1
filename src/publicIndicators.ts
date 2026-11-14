@@ -20,9 +20,10 @@ export async function readIndicator(key: keyof typeof indicators, fetchData = fe
   const start = new Date(today.getTime() - 90 * 86_400_000);
   const date = (day: Date) => day.toLocaleDateString("pt-BR", { timeZone: "America/Sao_Paulo", day: "2-digit", month: "2-digit", year: "numeric" });
   const url = `https://api.bcb.gov.br/dados/serie/bcdata.sgs.${series}/dados?formato=json&dataInicial=${date(start)}&dataFinal=${date(today)}`;
-  const endpoint = typeof location !== "undefined" && location.origin === "https://meucontrole.local"
-    ? `https://meucontrole.local/indicador/${series}`
-    : url;
+  const isLocalApp = typeof location !== "undefined" &&
+    (location.origin === "https://meucontrole.local" ||
+      location.origin === "https://appassets.androidplatform.net");
+  const endpoint = isLocalApp ? `${location.origin}/indicador/${series}` : url;
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), 9000);
   try {
