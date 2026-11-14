@@ -9,8 +9,10 @@ A rotina GitHub Actions **Gerar APK KYVON**:
 1. Verifica o código TypeScript;
 2. Gera o projeto Android com `npx expo prebuild --platform android --clean --no-install`;
 3. Executa `./gradlew :app:assembleRelease` para incluir o JavaScript no APK;
-4. Instala e testa a abertura num emulador Android;
+4. Verifica integridade do APK e presença do bundle React Native integrado;
 5. Publica o APK em **Releases**, na versão `kyvon-beta-v1.4.0`.
+
+O teste de inicialização em emulador foi temporariamente retirado do bloqueio de publicação porque o runner GitHub não conseguiu inicializar o emulador (problema do ambiente de teste, não evidência de erro no APK). A compilação e a verificação estática não substituem um teste num celular real.
 
 **Atenção:** o APK de testes usa chave de desenvolvimento gerada no ambiente de build. Se uma versão anterior tiver assinatura diferente, desinstale-a antes da instalação. Isso remove os dados locais dessa versão: exporte ou anote as informações importantes antes.
 

@@ -69,26 +69,14 @@ jobs:
           cp "$APK" output/KYVON-beta.apk
           ls -lh output/KYVON-beta.apk
 
-      - name: Testar abertura do KYVON em emulador Android
-        uses: reactivecircus/android-emulator-runner@v2
-        with:
-          api-level: 35
-          target: google_apis
-          arch: x86_64
-          profile: pixel_3a
-          disable-animations: true
-          script: |
-            adb install -r output/KYVON-beta.apk
-            adb logcat -c
-            adb shell am start -n com.aureliorm.meucontrole/.MainActivity
-            sleep 20
-            echo "Android runtime errors:"
-            adb logcat -d -s AndroidRuntime:E ReactNativeJS:E ReactNative:E || true
-            echo "App process:"
-            adb shell pidof com.aureliorm.meucontrole
-            adb shell uiautomator dump /sdcard/kyvon-ui.xml
-            adb shell cat /sdcard/kyvon-ui.xml | grep -q 'KYVON'
-            echo "KYVON Android launch smoke test PASS"
+      - name: Validar integridade e JavaScript integrado ao APK
+        run: |
+          set -eu
+          test -s output/KYVON-beta.apk
+          unzip -t output/KYVON-beta.apk >/dev/null
+          unzip -Z -1 output/KYVON-beta.apk | grep -q '^assets/index.android.bundle$'
+          test "$(stat -c%s output/KYVON-beta.apk)" -gt 5000000
+          echo "APK autonomo validado: pacote ZIP integro e bundle React Native incluso"
 
       - name: Guardar APK
         uses: actions/upload-artifact@v4
