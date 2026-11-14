@@ -1,6 +1,14 @@
 package com.aureliorm.meucontrole;
 
 import android.app.Activity;
+import android.os.Handler;
+import android.os.Looper;
+import android.view.Gravity;
+import android.view.View;
+import android.widget.FrameLayout;
+import android.widget.LinearLayout;
+import android.widget.TextView;
+import androidx.webkit.WebViewAssetLoader;
 import android.graphics.Color;
 import android.content.Intent;
 import android.content.ActivityNotFoundException;
@@ -35,7 +43,29 @@ public final class MainActivity extends Activity {
         getWindow().setStatusBarColor(background);
         getWindow().setNavigationBarColor(background);
 
+        final WebViewAssetLoader assetLoader = new WebViewAssetLoader.Builder()
+                .addPathHandler("/", new WebViewAssetLoader.AssetsPathHandler(this))
+                .build();
         WebView view = new WebView(this);
+        final Handler handler = new Handler(Looper.getMainLooper());
+        final FrameLayout container = new FrameLayout(this);
+        final LinearLayout cover = new LinearLayout(this);
+        cover.setOrientation(LinearLayout.VERTICAL);
+        cover.setGravity(Gravity.CENTER);
+        cover.setPadding(32, 32, 32, 32);
+        cover.setBackgroundColor(background);
+        final TextView title = new TextView(this);
+        title.setText("K");
+        title.setTextColor(Color.rgb(217, 182, 112));
+        title.setTextSize(68);
+        title.setGravity(Gravity.CENTER);
+        cover.addView(title, new LinearLayout.LayoutParams(-1, -2));
+        final TextView message = new TextView(this);
+        message.setText("KYVON\\nCarregando seu controle financeiro...");
+        message.setTextColor(Color.WHITE);
+        message.setTextSize(16);
+        message.setGravity(Gravity.CENTER);
+        cover.addView(message, new LinearLayout.LayoutParams(-1, -2));
         view.setBackgroundColor(background);
         view.getSettings().setJavaScriptEnabled(true);
         view.getSettings().setDomStorageEnabled(true);
@@ -76,52 +106,46 @@ public final class MainActivity extends Activity {
                     int series = Integer.parseInt(path.substring("/indicador/".length()));
                     return fetchIndicator(series);
                 }
-                return readWebAsset(path);
+                WebResourceResponse asset = assetLoader.shouldInterceptRequest(url);
+                return asset != null ? asset : response(404, "Missing asset", new byte[0]);
             }
 
             @Override
             public void onReceivedError(WebView webView, WebResourceRequest request, WebResourceError error) {
                 if (request.isForMainFrame()) {
-                    showStartupError(webView);
+                    message.setText("KYVON\\nFalha ao carregar a tela (" + error.getErrorCode() + ").\\nConfira o Android System WebView e tente novamente.");
+                    cover.setVisibility(View.VISIBLE);
                 }
             }
+
+            @Override
+            public void onPageFinished(WebView webView, String url) {
+                handler.postDelayed(new Runnable() {
+                    private int attempts = 0;
+                    @Override
+                    public void run() {
+                        if (attempts++ >= 24) {
+                            message.setText("KYVON\\nA interface ainda não foi exibida.\\nAtualize o Android System WebView e o Google Chrome.\\nSe continuar, envie uma captura desta tela.");
+                            return;
+                        }
+                        webView.evaluateJavascript(
+                            "(function(){var r=document.getElementById('root');return !!(r && r.textContent && r.textContent.indexOf('KYVON')!==-1 && r.textContent.indexOf('Gastos')!==-1);})()",
+                            value -> {
+                                if ("true".equals(value)) {
+                                    cover.setVisibility(View.GONE);
+                                } else {
+                                    handler.postDelayed(this, 500);
+                                }
+                            });
+                    }
+                }, 700);
+            }
         });
-        setContentView(view);
-        // Load the app HTML and JS from the same, secure origin instead of
-        // using loadDataWithBaseURL, which can leave WebViews with a blank page.
+        container.addView(view, new FrameLayout.LayoutParams(-1, -1));
+        container.addView(cover, new FrameLayout.LayoutParams(-1, -1));
+        setContentView(container);
         view.loadUrl("https://appassets.androidplatform.net/index.html");
     }
-    private void showStartupError(WebView view) {
-        Toast.makeText(this, "Não foi possível carregar a interface do KYVON. Verifique a versão instalada.", Toast.LENGTH_LONG).show();
-        view.loadData("<html><body style='background:#060708;color:#e7c77d;font-family:sans-serif;padding:32px'><h2>KYVON</h2><p>Falha ao carregar o aplicativo. Instale a versão beta mais recente.</p></body></html>", "text/html", "UTF-8");
-    }
-
-    private WebResourceResponse readWebAsset(String path) {
-        if (path == null || !path.startsWith("/") || path.contains("..") || path.contains("\\\\") || path.contains("\\0")) {
-            return response(403, "Forbidden", new byte[0]);
-        }
-        String filename = path.substring(1);
-        if (filename.isEmpty()) filename = "index.html";
-        String mime;
-        if (filename.endsWith(".js") || filename.endsWith(".mjs")) mime = "text/javascript";
-        else if (filename.endsWith(".css")) mime = "text/css";
-        else if (filename.endsWith(".html")) mime = "text/html";
-        else if (filename.endsWith(".json")) mime = "application/json";
-        else if (filename.endsWith(".png")) mime = "image/png";
-        else if (filename.endsWith(".jpg") || filename.endsWith(".jpeg")) mime = "image/jpeg";
-        else if (filename.endsWith(".svg")) mime = "image/svg+xml";
-        else if (filename.endsWith(".woff2")) mime = "font/woff2";
-        else if (filename.endsWith(".woff")) mime = "font/woff";
-        else if (filename.endsWith(".ttf")) mime = "font/ttf";
-        else mime = "application/octet-stream";
-        try {
-            return new WebResourceResponse(mime, (mime.startsWith("text/") || mime.equals("application/json")) ? "UTF-8" : null,
-                    getAssets().open(filename));
-        } catch (IOException ignored) {
-            return response(404, "Not Found", new byte[0]);
-        }
-    }
-
     private static WebResourceResponse fetchIndicator(int series) {
         HttpsURLConnection connection = null;
         try {

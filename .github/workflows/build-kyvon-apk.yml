@@ -89,8 +89,8 @@ jobs:
         if: github.ref == 'refs/heads/main'
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: kyvon-beta-v1.3.1
-          name: KYVON beta v1.3.1
+          tag_name: kyvon-beta-v1.3.2
+          name: KYVON beta v1.3.2
           body: 'APK de testes do KYVON. Build de desenvolvimento, para instalar manualmente no Android. Não é uma versão publicada na Play Store.'
           prerelease: true
           files: output/KYVON-beta.apk
