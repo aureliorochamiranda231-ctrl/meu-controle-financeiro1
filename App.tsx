@@ -286,7 +286,7 @@ function FinanceApp() {
 
   return (
     <SafeAreaView style={styles.container}>
-      <StatusBar barStyle="dark-content" backgroundColor="#F7F9FC" />
+      <StatusBar barStyle="dark-content" />
       <View style={styles.header}>
         <View style={styles.brandGroup}>
           <View style={styles.brandMark}><Text style={styles.brandLetter}>K</Text></View>
