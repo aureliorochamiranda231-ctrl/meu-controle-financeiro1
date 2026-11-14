@@ -1,4 +1,4 @@
-// KYVON: checked by the web-rendering smoke test before each Android APK build.
+// KYVON: verify UI on Chrome; Android uses the WebViewAssetLoader beta startup check.
 import React, { useEffect, useRef, useState } from "react";
 import {
   Alert, KeyboardAvoidingView, Linking, Platform, ScrollView,
