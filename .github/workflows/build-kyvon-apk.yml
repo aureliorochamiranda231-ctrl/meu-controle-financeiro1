@@ -37,6 +37,11 @@ jobs:
       - name: Exportar aplicativo web
         run: npm run export:web
 
+      - name: Testar interface exportada no Chrome
+        run: |
+          npm install --no-save --ignore-scripts puppeteer-core@24
+          node ci/check-web.cjs
+
       - name: Incluir web app no Android
         run: |
           mkdir -p android-preview/build/web-assets
