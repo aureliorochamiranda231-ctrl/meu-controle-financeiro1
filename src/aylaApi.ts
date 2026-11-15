@@ -45,7 +45,7 @@ export async function loginAylaPrivateServer(endpointInput: string, password: st
   const endpoint = normalizeAylaEndpoint(endpointInput);
   if (!endpoint) throw new Error("O endereço da Ayla precisa usar HTTPS.");
   if (password.length < 12) throw new Error("Informe a senha privada da Ayla.");
-  const response = await fetch(endpoint.replace(/\\/chat$/, "/auth"), {
+  const response = await fetch(endpoint.replace("/chat", "/auth"), {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ password })
