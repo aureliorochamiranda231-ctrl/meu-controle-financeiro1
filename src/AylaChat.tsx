@@ -54,7 +54,7 @@ export default function AylaChat({ data, onDataChange, onNavigate, onReset }: Pr
   const historyRef = useRef<AylaMessage[]>([]);
   const requestRef = useRef(0);
   const controllerRef = useRef<AbortController | null>(null);
-  const scrollRef = useRef<ScrollView>(null);
+  const scrollRef = useRef<React.ComponentRef<typeof ScrollView>>(null);
 
   function updateHistory(next: AylaMessage[]) {
     const trimmed = next.slice(-MAX_HISTORY);
@@ -238,7 +238,7 @@ export default function AylaChat({ data, onDataChange, onNavigate, onReset }: Pr
               {suggestedQuestions.slice(0, 4).map(item => (
                 <TouchableOpacity key={item.label} onPress={() => send(item.question)}
                   style={styles.suggestion} accessibilityRole="button">
-                  <Ionicons name="arrow-up-forward-outline" size={16} color="#3973EA" />
+                  <Ionicons name="arrow-forward-outline" size={16} color="#3973EA" />
                   <Text style={styles.suggestionText}>{item.question}</Text>
                 </TouchableOpacity>
               ))}
