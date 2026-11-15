@@ -6,6 +6,7 @@ export type AylaMessage = {
   role: "user" | "assistant";
   content: string;
   source?: string;
+  sentOnline?: boolean;
   createdAt: string;
 };
 
