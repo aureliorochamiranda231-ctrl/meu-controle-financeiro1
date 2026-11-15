@@ -23,10 +23,10 @@ type Props = {
   onReset: () => void;
 };
 
-function makeMessage(role: AylaMessage["role"], content: string, source?: string): AylaMessage {
+function makeMessage(role: AylaMessage["role"], content: string, source?: string, sentOnline = false): AylaMessage {
   return {
     id: Date.now().toString(36) + Math.random().toString(36).slice(2, 10),
-    role, content, source, createdAt: new Date().toISOString()
+    role, content, source, sentOnline, createdAt: new Date().toISOString()
   };
 }
 
@@ -36,7 +36,8 @@ function validMessage(value: unknown): value is AylaMessage {
   return typeof x.id === "string" && (x.role === "user" || x.role === "assistant") &&
     typeof x.content === "string" && x.content.length > 0 && x.content.length <= 12000 &&
     typeof x.createdAt === "string" && Number.isFinite(Date.parse(x.createdAt)) &&
-    (x.source === undefined || typeof x.source === "string");
+    (x.source === undefined || typeof x.source === "string") &&
+    (x.sentOnline === undefined || typeof x.sentOnline === "boolean");
 }
 
 function financialQuestion(text: string): boolean {
@@ -61,8 +62,8 @@ export default function AylaChat({ data, onDataChange, onNavigate, onReset }: Pr
     setMessages(trimmed);
   }
 
-  function addReply(content: string, source?: string) {
-    updateHistory([...historyRef.current, makeMessage("assistant", content, source)]);
+  function addReply(content: string, source?: string, sentOnline = false) {
+    updateHistory([...historyRef.current, makeMessage("assistant", content, source, sentOnline)]);
   }
 
   useEffect(() => {
@@ -122,11 +123,14 @@ export default function AylaChat({ data, onDataChange, onNavigate, onReset }: Pr
     const prompt = question.trim();
     if (!prompt || busy || pending || !ready) return;
     const requestId = ++requestRef.current;
-    const next = [...historyRef.current, makeMessage("user", prompt.slice(0, 2000))];
+    const localAction = parseAction(prompt, data);
+    const indicator = detectIndicator(prompt);
+    const willSendOnline = !localAction && !indicator && aylaOnlineConfigured &&
+      (!financialQuestion(prompt) || shareFinancial);
+    const next = [...historyRef.current, makeMessage("user", prompt.slice(0, 2000), undefined, willSendOnline)];
     updateHistory(next);
     setText("");
 
-    const localAction = parseAction(prompt, data);
     if (localAction) {
       if ("message" in localAction) addReply(localAction.message);
       else if (localAction.action.type === "navigate") {
@@ -139,7 +143,6 @@ export default function AylaChat({ data, onDataChange, onNavigate, onReset }: Pr
       return;
     }
 
-    const indicator = detectIndicator(prompt);
     if (indicator) {
       setBusy(true);
       const result = await readIndicator(indicator);
@@ -170,8 +173,10 @@ export default function AylaChat({ data, onDataChange, onNavigate, onReset }: Pr
     const timeout = setTimeout(() => controller.abort(), 25000);
     try {
       const summary = shareFinancial ? financialSummary(data) : undefined;
-      const answer = await askAylaOnline(next, summary, controller.signal);
-      if (requestRef.current === requestId) addReply(answer);
+      // Keep on-device financial conversations out of remote chat history by default.
+      const onlineHistory = next.filter(item => item.sentOnline === true);
+      const answer = await askAylaOnline(onlineHistory, summary, controller.signal);
+      if (requestRef.current === requestId) addReply(answer, undefined, true);
     } catch (error) {
       if (requestRef.current === requestId) {
         const message = controller.signal.aborted
