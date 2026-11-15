@@ -1,4 +1,4 @@
-# KYVON — beta 1.7.1
+# KYVON — beta 1.7.2
 
 Aplicativo pessoal de finanças para Android e iOS com interface modernizada.
 
@@ -9,9 +9,9 @@ Aplicativo pessoal de finanças para Android e iOS com interface modernizada.
 - O envio de resumo financeiro à IA externa é opcional e desativado por padrão. Confira [instruções completas](docs/AYLA.md).
 
 ## API privada da Ayla (beta)
-- Backend pronto para hospedar via Railway, com HTTPS, chave privada e limites básicos de requisição.
-- Na aba Ayla, toque no ícone de servidor para informar a URL HTTPS e a chave privada; nenhuma chave é gravada em arquivo local.
-- A implantação e o faturamento da API exigem a conta do desenvolvedor e variáveis secretas no serviço de hospedagem. Saiba mais em [docs/AYLA.md](docs/AYLA.md).
+- Backend implantado como Railway Function com HTTPS e sessão temporária de 12 horas. A IA online exige que o proprietário configure OPENAI_API_KEY no Railway; ela não está presente no APK.
+- Na aba Ayla, toque no ícone de servidor: o endereço HTTPS já vem preenchido. Informe a senha privada para entrar. Nenhuma senha ou token de sessão é salvo em arquivo local.
+- A hospedagem e o consumo da API podem gerar cobrança na conta do desenvolvedor. O código do serviço implantado está em [server/ayla/railway.ts](server/ayla/railway.ts). Saiba mais em [docs/AYLA.md](docs/AYLA.md).
 
 ## Visual KYVON Clean
 - Interface **clara**: fundo gelo, cartões brancos, azul principal e verde para metas positivas.
@@ -31,7 +31,7 @@ npm run test:unit
 npm run export:web
 ```
 
-O GitHub Actions gera o APK Android em `kyvon-beta-v1.7.1` e publica em [Releases](https://github.com/aureliorochamiranda231-ctrl/meu-controle-financeiro1/releases) após passar nos testes. **Não há garantia de abertura até o teste em um aparelho real.**
+O GitHub Actions gera o APK Android em `kyvon-beta-v1.7.2` e publica em [Releases](https://github.com/aureliorochamiranda231-ctrl/meu-controle-financeiro1/releases) após passar nos testes. **Não há garantia de abertura até o teste em um aparelho real.**
 
 ## Privacidade
 Os registros continuam **locais**; não há conta, sincronização, banco conectado ou IA hospedada pronta para uso. Serviços como Supabase e PostHog ainda não estão integrados à aplicação. Não comite chaves privadas em um repositório público. Desinstalar o APK para instalar outro pode apagar os registros locais.

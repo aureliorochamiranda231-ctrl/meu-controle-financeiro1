@@ -47,6 +47,10 @@ jobs:
       - run: npm run export:web
       - run: node --check server/ayla/index.mjs
       - run: node --test server/ayla/index.test.mjs
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: "1.4.4"
+      - run: node --test ci/test-ayla-railway.mjs
 
   build-apk:
     if: github.event_name != 'pull_request'
@@ -76,6 +80,14 @@ jobs:
 
       - name: Verificar exportação web
         run: npm run export:web
+
+      - name: Preparar Bun para teste de autenticação da Ayla
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: "1.4.4"
+
+      - name: Verificar autenticação privada da Ayla sem usar API paga
+        run: node --test ci/test-ayla-railway.mjs
 
       - name: Preparar Java
         uses: actions/setup-java@v4
@@ -127,8 +139,8 @@ jobs:
         if: github.ref == 'refs/heads/main'
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: kyvon-beta-v1.7.1
-          name: KYVON beta v1.7.1 (Android nativo)
+          tag_name: kyvon-beta-v1.7.2
+          name: KYVON beta v1.7.2 (Android nativo)
           body: 'KYVON com Ayla: conversa, histórico e assistente financeiro com confirmação de ações. IA geral requer serviço autenticado. JavaScript/Hermes integrado; dispensa servidor Metro e WebView. Versão de desenvolvimento, não publicada na Play Store. Se já tiver APK assinado com outra chave, desinstale a versão antiga antes de instalar.'
           prerelease: true
           files: output/KYVON-beta.apk
