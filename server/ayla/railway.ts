@@ -92,6 +92,7 @@ const server = Bun.serve({
     if (url.pathname === "/health" && req.method === "GET") {
       return json({ service: "Ayla", private: true, apiReady: !!Bun.env.OPENAI_API_KEY });
     }
+    if (url.pathname === "/auth" && req.method !== "POST") return json({ error: "method_not_allowed" }, 405);
     if (req.method !== "POST") return json({ error: "not_found" }, 404);
     const secretsOk = (Bun.env.AYLA_PASSWORD_SHA256 || "").length === 64 &&
       (Bun.env.AYLA_SESSION_SECRET || "").length >= 48;
