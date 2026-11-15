@@ -120,6 +120,33 @@ export async function askAylaOnline(
       throw new Error("A sessão da Ayla expirou. Entre novamente com sua senha.");
     if (response.status === 429) throw new Error("Limite temporário de perguntas atingido.");
     if (response.status === 503) throw new Error("Servidor da Ayla ainda não está configurado ou está indisponível.");
+    if (response.status === 502) {
+      let providerStatus: number | undefined;
+      let errorCode: string | undefined;
+      try {
+        const details: unknown = await response.json();
+        if (details && typeof details === "object") {
+          const value = details as { providerStatus?: unknown; error?: unknown };
+          if (typeof value.providerStatus === "number") providerStatus = value.providerStatus;
+          if (typeof value.error === "string") errorCode = value.error;
+        }
+      } catch {
+        // The provider can temporarily send a non-JSON gateway response.
+      }
+      if (providerStatus === 401 || errorCode === "openai_invalid_key") {
+        throw new Error("A chave da OpenAI foi recusada (erro 401). Crie uma nova chave em platform.openai.com/api-keys e substitua OPENAI_API_KEY no Railway.");
+      }
+      if (providerStatus === 403 || errorCode === "openai_permission_denied") {
+        throw new Error("A chave OpenAI não tem permissão para usar esta API. Verifique as permissões do projeto OpenAI.");
+      }
+      if (providerStatus === 429 || errorCode === "openai_quota_or_rate_limit") {
+        throw new Error("A OpenAI bloqueou a solicitação por limite ou saldo. Confira o faturamento e os limites da API OpenAI.");
+      }
+      if (errorCode === "openai_model_or_request_error") {
+        throw new Error("O modelo de IA configurado não foi aceito. Verifique AYLA_MODEL no Railway.");
+      }
+      throw new Error("O servidor da IA recebeu um erro da OpenAI. Verifique os registros da Ayla no Railway.");
+    }
     throw new Error("Não foi possível conversar com a Ayla online.");
   }
   const data: unknown = await response.json();

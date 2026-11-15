@@ -45,3 +45,10 @@
 - Teste de HTTP e autorização: `node --test ci/test-ayla-railway.mjs`, executado com Bun no GitHub Actions.
 - Após mudanças no código, atualize a Railway Function pelo painel/conector: uma mudança no repositório não atualiza automaticamente o serviço.
 - Por segurança, a senha provisória original foi substituída e os tokens antigos invalidados. Trate a nova senha como confidencial.
+
+## Diagnóstico de erro 401 da API OpenAI (beta 1.7.3)
+- O login KYVON `/auth` pode funcionar (200) e a chamada `/chat` ainda falhar caso a API OpenAI retorne 401.
+- O servidor devolve `{ "error": "openai_invalid_key", "providerStatus": 401 }` com status 502, sem expor a chave. O app informa que a credencial da OpenAI foi recusada.
+- Substituir `OPENAI_API_KEY` por **uma chave secreta válida e ativa da OpenAI Platform**, sem aspas e sem a palavra `Bearer`. O servidor remove espaços e aspas externas acidentais.
+- Alterar a variável no Railway, aplicar e verificar o novo deploy. A assinatura ChatGPT Plus não dá acesso automático à API OpenAI.
+- A mensagem nunca deve solicitar que o usuário envie a chave por chat. Não copie chaves para telas públicas, Github ou prints.

@@ -2,7 +2,7 @@
   "expo": {
     "name": "KYVON",
     "slug": "meu-controle-financeiro",
-    "version": "1.7.2",
+    "version": "1.7.3",
     "orientation": "portrait",
     "userInterfaceStyle": "light",
     "ios": {
@@ -10,7 +10,7 @@
     },
     "android": {
       "package": "com.aureliorm.meucontrole",
-      "versionCode": 12,
+      "versionCode": 13,
       "adaptiveIcon": {
         "foregroundImage": "./assets/kyvon-k.png",
         "backgroundColor": "#F6F8FC"
