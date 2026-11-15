@@ -10,6 +10,7 @@ import { applyAction, parseAction, type AssistantAction } from "./assistantActio
 import { detectIndicator, readIndicator } from "./publicIndicators";
 import {
   askAylaOnline, financialSummary, isAylaConnectionReady, normalizeAylaEndpoint,
+  loginAylaPrivateServer, DEFAULT_AYLA_ENDPOINT,
   type AylaMessage, type AylaPrivateConnection
 } from "./aylaApi";
 
@@ -57,10 +58,11 @@ export default function AylaChat({ data, onDataChange, onNavigate, onReset, conn
   const [shareFinancial, setShareFinancial] = useState(false);
   const [setupOpen, setSetupOpen] = useState(!isAylaConnectionReady(connection));
   const [endpointInput, setEndpointInput] = useState(
-    (process.env.EXPO_PUBLIC_AYLA_API_URL || "").trim()
+    DEFAULT_AYLA_ENDPOINT
   );
   const [tokenInput, setTokenInput] = useState("");
   const [setupWarning, setSetupWarning] = useState("");
+  const [authBusy, setAuthBusy] = useState(false);
   const onlineReady = isAylaConnectionReady(connection);
   const historyRef = useRef<AylaMessage[]>([]);
   const requestRef = useRef(0);
@@ -117,22 +119,30 @@ export default function AylaChat({ data, onDataChange, onNavigate, onReset, conn
 
   async function connectPrivateServer() {
     const endpoint = normalizeAylaEndpoint(endpointInput);
-    const key = tokenInput.trim();
+    const password = tokenInput.trim();
     if (!endpoint) {
-      setSetupWarning("Use o endereço HTTPS da sua API, por exemplo: https://seu-app.up.railway.app/chat");
+      setSetupWarning("Use o endereço HTTPS da Ayla.");
       return;
     }
-    if (key.length < 32 || key.length > 256) {
-      setSetupWarning("Informe a chave privada criada no servidor (mínimo de 32 caracteres).");
+    if (password.length < 12) {
+      setSetupWarning("Digite a senha privada para entrar.");
       return;
     }
-    onConnectionChange({ endpoint, token: key });
-    setShareFinancial(false);
+    setAuthBusy(true);
     setSetupWarning("");
-    setTokenInput("");
-    setSetupOpen(false);
-    // Only the HTTPS URL is saved. Never persist the bearer token to AsyncStorage.
-    await AsyncStorage.setItem(ENDPOINT_KEY, endpoint).catch(() => {});
+    try {
+      const authenticated = await loginAylaPrivateServer(endpoint, password);
+      onConnectionChange(authenticated);
+      setShareFinancial(false);
+      setTokenInput("");
+      setSetupOpen(false);
+      // Only the HTTPS URL is saved. The private password and session stay in memory only.
+      await AsyncStorage.setItem(ENDPOINT_KEY, endpoint).catch(() => {});
+    } catch (error) {
+      setSetupWarning(error instanceof Error ? error.message : "Falha ao entrar.");
+    } finally {
+      setAuthBusy(false);
+    }
   }
 
   function disconnectPrivateServer() {
@@ -206,7 +216,7 @@ export default function AylaChat({ data, onDataChange, onNavigate, onReset, conn
       addReply(
         "Oi! Sou a Ayla. Já posso conversar sobre seus gastos, limites e reserva aqui no KYVON. " +
         "Para responder perguntas gerais como uma IA avançada, meu servidor de inteligência artificial " +
-        "ainda precisa ser conectada em Configurar servidor. Você pode perguntar sobre suas finanças agora."
+        "ainda precisa ser ativada com sua senha em Configurar servidor. Você pode perguntar sobre suas finanças agora."
       );
       return;
     }
@@ -276,8 +286,7 @@ export default function AylaChat({ data, onDataChange, onNavigate, onReset, conn
         <View style={styles.setupPanel}>
           <Text style={styles.setupTitle}>Servidor privado da Ayla</Text>
           <Text style={styles.setupHint}>
-            Use um endereço HTTPS e a chave privada do seu servidor. A chave fica
-            somente na memória enquanto o aplicativo estiver aberto.
+            O endereço HTTPS já está preparado. Entre com sua senha privada; ela não será salva no celular.
           </Text>
           <TextInput
             accessibilityLabel="Endereço HTTPS do servidor Ayla"
@@ -289,9 +298,9 @@ export default function AylaChat({ data, onDataChange, onNavigate, onReset, conn
             keyboardType="url" style={styles.setupInput}
           />
           <TextInput
-            accessibilityLabel="Chave de acesso privada ao servidor"
+            accessibilityLabel="Senha privada de acesso à Ayla"
             value={tokenInput} onChangeText={setTokenInput}
-            placeholder="Chave privada do servidor"
+            placeholder="Senha de acesso à Ayla"
             placeholderTextColor="#8A99B0"
             secureTextEntry autoCapitalize="none" autoCorrect={false}
             style={styles.setupInput}
@@ -303,8 +312,8 @@ export default function AylaChat({ data, onDataChange, onNavigate, onReset, conn
                 <Text style={styles.disconnectText}>Desconectar</Text>
               </TouchableOpacity>
             )}
-            <TouchableOpacity accessibilityRole="button" style={styles.connectButton} onPress={connectPrivateServer}>
-              <Text style={styles.connectText}>{onlineReady ? "Trocar chave" : "Conectar servidor"}</Text>
+            <TouchableOpacity accessibilityRole="button" disabled={authBusy} style={styles.connectButton} onPress={connectPrivateServer}>
+              <Text style={styles.connectText}>{authBusy ? "Autenticando..." : onlineReady ? "Trocar sessão" : "Entrar na Ayla"}</Text>
             </TouchableOpacity>
           </View>
         </View>
