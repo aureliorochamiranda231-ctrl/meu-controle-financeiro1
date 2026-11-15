@@ -38,6 +38,29 @@ export function normalizeAylaEndpoint(text: string): string | null {
   }
 }
 
+export const DEFAULT_AYLA_ENDPOINT =
+  (process.env.EXPO_PUBLIC_AYLA_API_URL || "https://ayla-private-api-production.up.railway.app/chat").trim();
+
+export async function loginAylaPrivateServer(endpointInput: string, password: string): Promise<AylaPrivateConnection> {
+  const endpoint = normalizeAylaEndpoint(endpointInput);
+  if (!endpoint) throw new Error("O endereço da Ayla precisa usar HTTPS.");
+  if (password.length < 12) throw new Error("Informe a senha privada da Ayla.");
+  const response = await fetch(endpoint.replace(/\\/chat$/, "/auth"), {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ password })
+  });
+  if (response.status === 401) throw new Error("Senha incorreta.");
+  if (response.status === 429) throw new Error("Muitas tentativas. Tente novamente mais tarde.");
+  if (!response.ok) throw new Error("Não foi possível autenticar no servidor. Confira se está online.");
+  const value: unknown = await response.json();
+  if (!value || typeof value !== "object" || !("token" in value) ||
+    typeof value.token !== "string" || value.token.length < 32) {
+    throw new Error("O servidor não forneceu uma sessão válida.");
+  }
+  return { endpoint, token: value.token };
+}
+
 export type AylaPrivateConnection = { endpoint: string; token: string };
 export function isAylaConnectionReady(config: AylaPrivateConnection | null): boolean {
   return !!config && !!normalizeAylaEndpoint(config.endpoint) &&
@@ -94,7 +117,7 @@ export async function askAylaOnline(
   });
   if (!response.ok) {
     if (response.status === 401 || response.status === 403)
-      throw new Error("A chave privada da Ayla está incorreta ou foi revogada.");
+      throw new Error("A sessão da Ayla expirou. Entre novamente com sua senha.");
     if (response.status === 429) throw new Error("Limite temporário de perguntas atingido.");
     if (response.status === 503) throw new Error("Servidor da Ayla ainda não está configurado ou está indisponível.");
     throw new Error("Não foi possível conversar com a Ayla online.");
