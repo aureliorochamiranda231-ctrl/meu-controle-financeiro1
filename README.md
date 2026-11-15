@@ -1,6 +1,12 @@
-# KYVON — beta 1.6.0
+# KYVON — beta 1.7.0
 
 Aplicativo pessoal de finanças para Android e iOS com interface modernizada.
+
+## Ayla: conversa como um chat
+- Nova aba **Ayla** com mensagens em balões, histórico salvo no celular e sugestões de perguntas.
+- Cálculos e comandos financeiros com confirmação obrigatória antes de alterar registros.
+- Integração preparada com um modelo avançado via API HTTPS (sem chave secreta dentro do app). **A IA geral ainda não está ativa sem backend, login e configuração.**
+- O envio de resumo financeiro à IA externa é opcional e desativado por padrão. Confira [instruções completas](docs/AYLA.md).
 
 ## Visual KYVON Clean
 - Interface **clara**: fundo gelo, cartões brancos, azul principal e verde para metas positivas.
@@ -20,7 +26,7 @@ npm run test:unit
 npm run export:web
 ```
 
-O GitHub Actions gera o APK Android em `kyvon-beta-v1.6.0` e publica em [Releases](https://github.com/aureliorochamiranda231-ctrl/meu-controle-financeiro1/releases) após passar nos testes. **Não há garantia de abertura até o teste em um aparelho real.**
+O GitHub Actions gera o APK Android em `kyvon-beta-v1.7.0` e publica em [Releases](https://github.com/aureliorochamiranda231-ctrl/meu-controle-financeiro1/releases) após passar nos testes. **Não há garantia de abertura até o teste em um aparelho real.**
 
 ## Privacidade
-Os registros continuam **locais**; não há conta, sincronização, banco conectado ou IA hospedada. Serviços como Supabase e PostHog ainda não estão integrados à aplicação. Não comite chaves privadas em um repositório público. Desinstalar o APK para instalar outro pode apagar os registros locais.
+Os registros continuam **locais**; não há conta, sincronização, banco conectado ou IA hospedada pronta para uso. Serviços como Supabase e PostHog ainda não estão integrados à aplicação. Não comite chaves privadas em um repositório público. Desinstalar o APK para instalar outro pode apagar os registros locais.

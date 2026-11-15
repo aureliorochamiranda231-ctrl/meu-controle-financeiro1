@@ -1,17 +1,16 @@
 // KYVON: offline-first React Native app; no WebView is used in the standalone APK.
 import React, { useEffect, useRef, useState } from "react";
 import {
-  Alert, KeyboardAvoidingView, Linking, Platform, ScrollView,
+  Alert, KeyboardAvoidingView, Platform, ScrollView,
   StatusBar, StyleSheet, Text, TextInput, TouchableOpacity, View
 } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import Ionicons from "@expo/vector-icons/Ionicons";
 import { SafeAreaProvider, SafeAreaView } from "react-native-safe-area-context";
 import { dailyAllowance, dayBounds, difference, money, monthBounds, parseMoney, sumExpenses, weekBounds } from "./src/finance";
-import { answerQuestion, categories, suggestedQuestions, type AppData, type Expense } from "./src/assistant";
+import { categories, type AppData, type Expense } from "./src/assistant";
 
-import { applyAction, parseAction, type AssistantAction } from "./src/assistantActions";
-import { detectIndicator, readIndicator } from "./src/publicIndicators";
+import AylaChat from "./src/AylaChat";
 import StartupBoundary from "./src/StartupBoundary";
 import { initialData, restoreSavedData } from "./src/persistence";
 
@@ -59,11 +58,6 @@ function FinanceApp() {
   const [budgetInput, setBudgetInput] = useState("");
   const [reserveInput, setReserveInput] = useState("");
   const [goalInput, setGoalInput] = useState("");
-  const [question, setQuestion] = useState("");
-  const [conversation, setConversation] = useState<{ question: string; answer: string; source?: string }[]>([]);
-  const [pending, setPending] = useState<{ action: AssistantAction; description: string } | null>(null);
-  const [onlineBusy, setOnlineBusy] = useState(false);
-  const lookupId = useRef(0);
 
 
   useEffect(() => {
@@ -212,72 +206,15 @@ function FinanceApp() {
     setReserveDeposit("");
   }
 
-  function clearConversation() {
-    lookupId.current += 1;
-    setOnlineBusy(false);
-    setConversation([]);
-    setPending(null);
-  }
-
   function resetAll() {
     resetExpenseForm();
     setReserveDeposit("");
-    setQuestion("");
-    clearConversation();
     setData(initialData);
     setTab("home");
-  }
-
-  async function askAssistant(input: string) {
-    const prompt = input.trim();
-    if (!prompt || pending || onlineBusy) return;
-    setQuestion("");
-    const append = (answer: string, source?: string) =>
-      setConversation(previous => [...previous.slice(-9), { question: prompt, answer, source }]);
-
-    const result = parseAction(prompt, data);
-    if (result && "message" in result) {
-      append(result.message);
-      return;
-    }
-    if (result && "action" in result) {
-      if (result.action.type === "navigate") {
-        setTab(result.action.tab);
-        return;
-      }
-      setPending(result);
-      append("Revise a alteração e confirme abaixo.");
-      return;
-    }
-    const indicator = detectIndicator(prompt);
-    if (indicator) {
-      const id = ++lookupId.current;
-      setOnlineBusy(true);
-      const response = await readIndicator(indicator);
-      if (id === lookupId.current) {
-        append(response.answer, response.source);
-        setOnlineBusy(false);
-      }
-      return;
-    }
-    append(answerQuestion(prompt, data));
-  }
-
-  function finishAction(approved: boolean) {
-    if (!pending) return;
-    const { action, description } = pending;
-    setPending(null);
-    if (approved && action.type === "reset") {
-      resetAll();
-      return;
-    }
-    const now = new Date();
-    if (approved) setData(current => applyAction(current, action, initialData, now));
-    setConversation(previous => previous.map((message, index) =>
-      index === previous.length - 1
-        ? { ...message, answer: approved ? `Concluído. ${description}.` : "Alteração cancelada." }
-        : message
-    ));
+    // Financial records and Ayla history are separate on-device storage keys.
+    AsyncStorage.removeItem("@kyvon_ayla_chat_v1").catch(error =>
+      console.error("[KYVON] Falha ao apagar histórico Ayla:", error)
+    );
   }
 
   if (!loaded) {
@@ -305,7 +242,9 @@ function FinanceApp() {
         <Text style={styles.warningText}>{storageWarning}</Text>
       </View>}
       <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === "ios" ? "padding" : undefined}>
-        <ScrollView key={tab} ref={scrollRef} onContentSizeChange={tab === "assistant" && conversation.length ? () => scrollRef.current?.scrollToEnd({ animated: true }) : undefined} contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
+        {tab === "assistant"
+          ? <AylaChat data={data} onDataChange={setData} onNavigate={setTab} onReset={resetAll} />
+          : <ScrollView key={tab} ref={scrollRef} contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
           {tab === "home" && <>
             <View style={styles.welcomeRow}>
               <View>
@@ -326,7 +265,7 @@ function FinanceApp() {
             <View style={styles.quickActions}>
               <QuickAction icon="add-circle-outline" label="Novo gasto" onPress={() => setTab("expenses")} />
               <QuickAction icon="flag-outline" label="Minha reserva" onPress={() => setTab("goals")} />
-              <QuickAction icon="sparkles-outline" label="Assistente" onPress={() => setTab("assistant")} />
+              <QuickAction icon="sparkles-outline" label="Ayla" onPress={() => setTab("assistant")} />
             </View>
             <View style={styles.sectionHeader}>
               <Text style={styles.sectionTitle}>Seus limites</Text>
@@ -462,75 +401,6 @@ function FinanceApp() {
             </View>
           </>}
 
-          {tab === "assistant" && <>
-            <Text style={styles.pageEyebrow}>INTELIGÊNCIA FINANCEIRA</Text>
-            <Text style={styles.pageTitle}>Seu assistente</Text>
-            <Text style={styles.pageSubtitle}>Respostas práticas para cuidar melhor do seu dinheiro.</Text>
-            <View style={styles.assistantIntro}>
-              <View style={styles.assistantLogo}><Ionicons name="sparkles-outline" color="#2563EB" size={24} /></View>
-              <View style={{flex: 1}}>
-                <Text style={styles.assistantIntroTitle}>Oi! Sou seu assistente KYVON.</Text>
-                <Text style={styles.assistantIntroText}>Posso calcular limites, resumir gastos e consultar indicadores públicos. Seus registros permanecem neste dispositivo.</Text>
-              </View>
-            </View>
-            <Text style={styles.sectionTitle}>Perguntas rápidas</Text>
-            <View style={styles.filters}>
-              {suggestedQuestions.map(suggestion => (
-                <TouchableOpacity key={suggestion.label} accessibilityRole="button" disabled={!!pending || onlineBusy} style={styles.chip} onPress={() => askAssistant(suggestion.question)}>
-                  <Text style={styles.chipText}>{suggestion.label}</Text>
-                </TouchableOpacity>
-              ))}
-            </View>
-            {conversation.map((message, index) => (
-              <View key={index} style={styles.messageGroup}>
-                <View style={styles.questionBubble}><Text style={styles.questionText}>{message.question}</Text></View>
-                <View style={styles.answerBubble}>
-                  <Text accessibilityLiveRegion="polite" style={styles.messageText}>{message.answer}</Text>
-                  {message.source && <TouchableOpacity accessibilityRole="link" onPress={() => Linking.openURL(message.source!).catch(() => inform("Fonte", message.source!))}>
-                    <Text style={styles.link}>Ver dados do Banco Central</Text>
-                  </TouchableOpacity>}
-                </View>
-              </View>
-            ))}
-            {pending && <View style={styles.panel}>
-              <Text style={styles.sectionTitle}>Confirmar alteração</Text>
-              <Text style={styles.bodyText}>{pending.description}</Text>
-              <TouchableOpacity accessibilityRole="button" style={styles.primaryButton} onPress={() => finishAction(true)}>
-                <Text style={styles.primaryButtonText}>Confirmar</Text>
-              </TouchableOpacity>
-              <TouchableOpacity accessibilityRole="button" onPress={() => finishAction(false)}>
-                <Text style={styles.clearConversation}>Cancelar alteração</Text>
-              </TouchableOpacity>
-            </View>}
-            {onlineBusy && <Text accessibilityLiveRegion="polite" style={styles.bodyText}>Consultando o Banco Central…</Text>}
-            <View style={styles.panel}>
-              <TextInput
-                accessibilityLabel="Pergunta ao assistente"
-                style={styles.input}
-                value={question}
-                onChangeText={setQuestion}
-                placeholder="Ex.: registre R$ 30,00 em mercado"
-                placeholderTextColor="#B0ADB2"
-                maxLength={300}
-                returnKeyType="send"
-                onSubmitEditing={() => askAssistant(question)}
-              />
-              <TouchableOpacity
-                accessibilityRole="button"
-                accessibilityState={{ disabled: (!question.trim() || !!pending || onlineBusy) }}
-                disabled={(!question.trim() || !!pending || onlineBusy)}
-                style={[styles.primaryButton, (!question.trim() || !!pending || onlineBusy) && styles.disabledButton]}
-                onPress={() => askAssistant(question)}
-              >
-                <Ionicons name="send-outline" size={16} color="#FFFFFF" />
-                <Text style={styles.primaryButtonText}>Enviar pergunta</Text>
-              </TouchableOpacity>
-              {conversation.length > 0 && <TouchableOpacity accessibilityRole="button" onPress={clearConversation}>
-                <Text style={styles.clearConversation}>Limpar conversa</Text>
-              </TouchableOpacity>}
-            </View>
-          </>}
-
           {tab === "settings" && <>
             <Text style={styles.pageEyebrow}>PREFERÊNCIAS E METAS</Text>
             <Text style={styles.pageTitle}>Seu planejamento</Text>
@@ -553,20 +423,20 @@ function FinanceApp() {
             </View>
             <View style={styles.panel}>
               <Text style={styles.sectionTitle}>Seus dados</Text>
-              <Text style={styles.bodyText}>Nesta primeira versão, seus registros ficam armazenados localmente neste aparelho. Não há conta, sincronização em nuvem ou conexão com banco.</Text>
+              <Text style={styles.bodyText}>Seus registros e o histórico da Ayla ficam armazenados localmente neste aparelho. Não há conta, sincronização em nuvem ou conexão com banco. Se a IA online for ativada, mensagens digitadas no chat serão enviadas ao serviço conectado.</Text>
               <TouchableOpacity onPress={() => confirmAction("Apagar todos os dados?", "Isso remove os registros deste aparelho.", "Apagar", resetAll)}>
                 <Text style={styles.dangerText}>Apagar todos os meus dados</Text>
               </TouchableOpacity>
             </View>
           </>}
-        </ScrollView>
+        </ScrollView>}
       </KeyboardAvoidingView>
 
       <View style={styles.tabBar}>
         <TabButton icon="home-outline" label="Início" active={tab === "home"} onPress={() => setTab("home")} />
         <TabButton icon="receipt-outline" label="Gastos" active={tab === "expenses"} onPress={() => setTab("expenses")} />
         <TabButton icon="shield-checkmark-outline" label="Reserva" active={tab === "goals"} onPress={() => setTab("goals")} />
-        <TabButton icon="chatbubble-ellipses-outline" label="Assistente" active={tab === "assistant"} onPress={() => setTab("assistant")} />
+        <TabButton icon="chatbubble-ellipses-outline" label="Ayla" active={tab === "assistant"} onPress={() => setTab("assistant")} />
         <TabButton icon="settings-outline" label="Ajustes" active={tab === "settings"} onPress={() => setTab("settings")} />
       </View>
     </SafeAreaView>

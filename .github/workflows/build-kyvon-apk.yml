@@ -12,13 +12,38 @@ on:
       - 'package-lock.json'
       - 'ci/**'
       - '.github/workflows/build-kyvon-apk.yml'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'App.tsx'
+      - 'src/**'
+      - 'app.json'
+      - 'package.json'
+      - 'package-lock.json'
+      - 'ci/**'
+      - '.github/workflows/build-kyvon-apk.yml'
   workflow_dispatch:
 
 permissions:
   contents: write
 
 jobs:
+  validate:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm run test:unit
+      - run: npm run export:web
+
   build-apk:
+    if: github.event_name != 'pull_request'
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     env:
@@ -96,9 +121,9 @@ jobs:
         if: github.ref == 'refs/heads/main'
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: kyvon-beta-v1.6.0
-          name: KYVON beta v1.6.0 (Android nativo)
-          body: 'KYVON Clean: interface clara, azul e branco, redesenhada em todas as abas. JavaScript/Hermes integrado; dispensa servidor Metro e WebView. Versão de desenvolvimento, não publicada na Play Store. Se já tiver APK assinado com outra chave, desinstale a versão antiga antes de instalar.'
+          tag_name: kyvon-beta-v1.7.0
+          name: KYVON beta v1.7.0 (Android nativo)
+          body: 'KYVON com Ayla: conversa, histórico e assistente financeiro com confirmação de ações. IA geral requer serviço autenticado. JavaScript/Hermes integrado; dispensa servidor Metro e WebView. Versão de desenvolvimento, não publicada na Play Store. Se já tiver APK assinado com outra chave, desinstale a versão antiga antes de instalar.'
           prerelease: true
           files: output/KYVON-beta.apk
           fail_on_unmatched_files: true
