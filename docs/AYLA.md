@@ -27,7 +27,7 @@
 
 ## Limitações e segurança
 - Este modo privado é **beta para uma pessoa**. A senha única não deve ser distribuída a usuários públicos. Antes de lançamento público, substituir por autenticação individual e limites/quotas por conta.
-- Rate limiting de login e perguntas é em memória por instância; para escala ou múltiplas réplicas, usar limites distribuídos (Redis) e quotas por pessoa. A proteção contra força bruta é básica.
+- Rate limiting global e por IP de login/perguntas é em memória por instância; para escala ou múltiplas réplicas, usar limites distribuídos (Redis) e quotas por pessoa. A proteção contra força bruta é básica.
 - O histórico de chat é local no aparelho. Mensagens para IA online vão ao servidor e ao provedor do modelo. O servidor foi configurado para `store: false` ao chamar Responses API.
 - Não há conexão bancária ou função de pagamento. Nenhuma alteração de dados é aplicada sem confirmação.
 - Desinstalar o app pode apagar registros e conversas locais.
@@ -39,3 +39,9 @@
 - `npm run test:unit`
 - `npm run export:web`
 - Validar /health, /auth (senha incorreta -> 401), /chat sem sessão -> 401 e /chat com sessão, após configurar a OpenAI, -> 200.
+
+## Auditoria e verificação
+- Código da Railway Function: [`server/ayla/railway.ts`](../server/ayla/railway.ts), sem senhas ou chaves embutidas.
+- Teste de HTTP e autorização: `node --test ci/test-ayla-railway.mjs`, executado com Bun no GitHub Actions.
+- Após mudanças no código, atualize a Railway Function pelo painel/conector: uma mudança no repositório não atualiza automaticamente o serviço.
+- Por segurança, a senha provisória original foi substituída e os tokens antigos invalidados. Trate a nova senha como confidencial.
