@@ -22,10 +22,50 @@ export type AylaFinancialSummary = {
   reserveGoal: number;
 };
 
-const apiUrl = (process.env.EXPO_PUBLIC_AYLA_API_URL ?? "").trim();
+/** The mobile app must use an HTTPS endpoint. No tokens are stored in build config. */
+export function normalizeAylaEndpoint(text: string): string | null {
+  const raw = text.trim();
+  if (!/^https:\/\//i.test(raw)) return null;
+  try {
+    const uri = new URL(raw);
+    if (uri.protocol !== "https:" || !uri.hostname.includes(".") ||
+      uri.username || uri.password || uri.search || uri.hash) return null;
+    if (uri.pathname === "/" || uri.pathname === "") uri.pathname = "/chat";
+    if (uri.pathname !== "/chat") return null;
+    return uri.toString();
+  } catch {
+    return null;
+  }
+}
 
-/** Only an HTTPS service owned by the developer. Never embed an AI API key in an APK. */
-export const aylaOnlineConfigured = /^https:\/\/[^/]+/i.test(apiUrl);
+export const DEFAULT_AYLA_ENDPOINT =
+  (process.env.EXPO_PUBLIC_AYLA_API_URL || "https://ayla-private-api-production.up.railway.app/chat").trim();
+
+export async function loginAylaPrivateServer(endpointInput: string, password: string): Promise<AylaPrivateConnection> {
+  const endpoint = normalizeAylaEndpoint(endpointInput);
+  if (!endpoint) throw new Error("O endereço da Ayla precisa usar HTTPS.");
+  if (password.length < 12) throw new Error("Informe a senha privada da Ayla.");
+  const response = await fetch(endpoint.replace("/chat", "/auth"), {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ password })
+  });
+  if (response.status === 401) throw new Error("Senha incorreta.");
+  if (response.status === 429) throw new Error("Muitas tentativas. Tente novamente mais tarde.");
+  if (!response.ok) throw new Error("Não foi possível autenticar no servidor. Confira se está online.");
+  const value: unknown = await response.json();
+  if (!value || typeof value !== "object" || !("token" in value) ||
+    typeof value.token !== "string" || value.token.length < 32) {
+    throw new Error("O servidor não forneceu uma sessão válida.");
+  }
+  return { endpoint, token: value.token };
+}
+
+export type AylaPrivateConnection = { endpoint: string; token: string };
+export function isAylaConnectionReady(config: AylaPrivateConnection | null): boolean {
+  return !!config && !!normalizeAylaEndpoint(config.endpoint) &&
+    config.token.length >= 32 && config.token.length <= 256;
+}
 
 export function financialSummary(data: AppData, now = new Date()): AylaFinancialSummary {
   const inBounds = ([start, end]: [Date, Date]) => sumExpenses(
@@ -48,38 +88,44 @@ export function financialSummary(data: AppData, now = new Date()): AylaFinancial
 }
 
 /**
- * Contract: POST EXPO_PUBLIC_AYLA_API_URL with {messages, financialSummary?}.
- * The trusted server authenticates the user, rate limits and calls its model.
- * The server responds with {reply: string}. It never receives permissions
- * to mutate phone data; financial changes go through local confirmation.
+ * Requests travel encrypted to an HTTPS server; its private bearer token lives
+ * only in application memory during this beta session (never in AsyncStorage).
+ * The server holds the OpenAI API key and authenticates before any AI call.
  */
 export async function askAylaOnline(
+  config: AylaPrivateConnection,
   history: AylaMessage[],
   summary?: AylaFinancialSummary,
   signal?: AbortSignal
 ): Promise<string> {
-  if (!aylaOnlineConfigured) throw new Error("A IA online ainda não foi configurada.");
+  const url = normalizeAylaEndpoint(config.endpoint);
+  if (!url || !isAylaConnectionReady(config)) {
+    throw new Error("Configure o endereço HTTPS e a chave privada da Ayla.");
+  }
   const messages = history.slice(-12).map(item => ({
     role: item.role,
     content: item.content.slice(0, 2000)
   }));
-  const response = await fetch(apiUrl, {
+  const response = await fetch(url, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: "Bearer " + config.token
+    },
     body: JSON.stringify({ messages, ...(summary ? { financialSummary: summary } : {}) }),
     signal
   });
   if (!response.ok) {
-    if (response.status === 401 || response.status === 403) {
-      throw new Error("A conexão da Ayla precisa de autenticação. Tente novamente após entrar na sua conta.");
-    }
-    if (response.status === 429) throw new Error("Ayla recebeu muitas perguntas. Tente novamente em instantes.");
-    throw new Error("Não foi possível conversar com a Ayla online agora.");
+    if (response.status === 401 || response.status === 403)
+      throw new Error("A sessão da Ayla expirou. Entre novamente com sua senha.");
+    if (response.status === 429) throw new Error("Limite temporário de perguntas atingido.");
+    if (response.status === 503) throw new Error("Servidor da Ayla ainda não está configurado ou está indisponível.");
+    throw new Error("Não foi possível conversar com a Ayla online.");
   }
   const data: unknown = await response.json();
   if (!data || typeof data !== "object" || !("reply" in data) ||
-      typeof data.reply !== "string" || !data.reply.trim() || data.reply.length > 12000) {
-    throw new Error("Ayla recebeu uma resposta inválida. Tente novamente.");
+    typeof data.reply !== "string" || !data.reply.trim() || data.reply.length > 12000) {
+    throw new Error("Resposta inválida do servidor da Ayla.");
   }
   return data.reply.trim();
 }

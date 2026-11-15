@@ -11,6 +11,7 @@ import { dailyAllowance, dayBounds, difference, money, monthBounds, parseMoney, 
 import { categories, type AppData, type Expense } from "./src/assistant";
 
 import AylaChat from "./src/AylaChat";
+import type { AylaPrivateConnection } from "./src/aylaApi";
 import StartupBoundary from "./src/StartupBoundary";
 import { initialData, restoreSavedData } from "./src/persistence";
 
@@ -45,6 +46,7 @@ function FinanceApp() {
   const [canSave, setCanSave] = useState(false);
   const [storageWarning, setStorageWarning] = useState<string | null>(null);
   const [tab, setTab] = useState<Tab>("home");
+  const [aylaConnection, setAylaConnection] = useState<AylaPrivateConnection | null>(null);
   const [today, setToday] = useState(() => new Date());
   const [editingId, setEditingId] = useState<string | null>(null);
   const [historyPeriod, setHistoryPeriod] = useState<"all" | "week">("all");
@@ -207,6 +209,7 @@ function FinanceApp() {
   }
 
   function resetAll() {
+    setAylaConnection(null);
     resetExpenseForm();
     setReserveDeposit("");
     setData(initialData);
@@ -243,7 +246,8 @@ function FinanceApp() {
       </View>}
       <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === "ios" ? "padding" : undefined}>
         {tab === "assistant"
-          ? <AylaChat data={data} onDataChange={setData} onNavigate={setTab} onReset={resetAll} />
+          ? <AylaChat data={data} onDataChange={setData} onNavigate={setTab} onReset={resetAll}
+              connection={aylaConnection} onConnectionChange={setAylaConnection} />
           : <ScrollView key={tab} ref={scrollRef} contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
           {tab === "home" && <>
             <View style={styles.welcomeRow}>

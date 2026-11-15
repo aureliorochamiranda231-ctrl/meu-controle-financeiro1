@@ -9,10 +9,13 @@ import { answerQuestion, normalize, suggestedQuestions, type AppData } from "./a
 import { applyAction, parseAction, type AssistantAction } from "./assistantActions";
 import { detectIndicator, readIndicator } from "./publicIndicators";
 import {
-  askAylaOnline, aylaOnlineConfigured, financialSummary, type AylaMessage
+  askAylaOnline, financialSummary, isAylaConnectionReady, normalizeAylaEndpoint,
+  loginAylaPrivateServer, DEFAULT_AYLA_ENDPOINT,
+  type AylaMessage, type AylaPrivateConnection
 } from "./aylaApi";
 
 const CHAT_KEY = "@kyvon_ayla_chat_v1";
+const ENDPOINT_KEY = "@kyvon_ayla_endpoint_v1";
 const MAX_HISTORY = 60;
 type Pending = { action: AssistantAction; description: string };
 
@@ -21,6 +24,8 @@ type Props = {
   onDataChange: React.Dispatch<React.SetStateAction<AppData>>;
   onNavigate: (tab: "home" | "expenses" | "goals" | "settings") => void;
   onReset: () => void;
+  connection: AylaPrivateConnection | null;
+  onConnectionChange: (value: AylaPrivateConnection | null) => void;
 };
 
 function makeMessage(role: AylaMessage["role"], content: string, source?: string, sentOnline = false): AylaMessage {
@@ -44,13 +49,21 @@ function financialQuestion(text: string): boolean {
   return /\b(gast|gastos|gastei|despesa|despesas|orcamento|limite|limites|renda|salario|reserva|meta|financ|dinheiro|economiz|poup|categoria|categorias|saldo)\w*/.test(normalize(text));
 }
 
-export default function AylaChat({ data, onDataChange, onNavigate, onReset }: Props) {
+export default function AylaChat({ data, onDataChange, onNavigate, onReset, connection, onConnectionChange }: Props) {
   const [messages, setMessages] = useState<AylaMessage[]>([]);
   const [text, setText] = useState("");
   const [pending, setPending] = useState<Pending | null>(null);
   const [busy, setBusy] = useState(false);
   const [ready, setReady] = useState(false);
   const [shareFinancial, setShareFinancial] = useState(false);
+  const [setupOpen, setSetupOpen] = useState(!isAylaConnectionReady(connection));
+  const [endpointInput, setEndpointInput] = useState(
+    DEFAULT_AYLA_ENDPOINT
+  );
+  const [tokenInput, setTokenInput] = useState("");
+  const [setupWarning, setSetupWarning] = useState("");
+  const [authBusy, setAuthBusy] = useState(false);
+  const onlineReady = isAylaConnectionReady(connection);
   const historyRef = useRef<AylaMessage[]>([]);
   const requestRef = useRef(0);
   const controllerRef = useRef<AbortController | null>(null);
@@ -71,14 +84,18 @@ export default function AylaChat({ data, onDataChange, onNavigate, onReset }: Pr
     (async () => {
       try {
         const saved = await AsyncStorage.getItem(CHAT_KEY);
-        if (!active || !saved) return;
-        const parsed: unknown = JSON.parse(saved);
-        if (parsed && typeof parsed === "object") {
-          const record = parsed as { messages?: unknown; shareFinancial?: unknown };
-          if (Array.isArray(record.messages)) {
-            updateHistory(record.messages.filter(validMessage).slice(-MAX_HISTORY));
+        if (active && saved) {
+          const parsed: unknown = JSON.parse(saved);
+          if (parsed && typeof parsed === "object") {
+            const record = parsed as { messages?: unknown };
+            if (Array.isArray(record.messages)) {
+              updateHistory(record.messages.filter(validMessage).slice(-MAX_HISTORY));
+            }
           }
-          if (typeof record.shareFinancial === "boolean") setShareFinancial(record.shareFinancial);
+        }
+        const savedEndpoint = await AsyncStorage.getItem(ENDPOINT_KEY);
+        if (active && savedEndpoint && normalizeAylaEndpoint(savedEndpoint)) {
+          setEndpointInput(savedEndpoint);
         }
       } catch (error) {
         console.error("[KYVON] Falha ao recuperar chat Ayla:", error);
@@ -95,10 +112,47 @@ export default function AylaChat({ data, onDataChange, onNavigate, onReset }: Pr
 
   useEffect(() => {
     if (ready) {
-      AsyncStorage.setItem(CHAT_KEY, JSON.stringify({ messages, shareFinancial }))
+      AsyncStorage.setItem(CHAT_KEY, JSON.stringify({ messages }))
         .catch(error => console.error("[KYVON] Falha ao salvar chat Ayla:", error));
     }
-  }, [messages, shareFinancial, ready]);
+  }, [messages, ready]);
+
+  async function connectPrivateServer() {
+    const endpoint = normalizeAylaEndpoint(endpointInput);
+    const password = tokenInput.trim();
+    if (!endpoint) {
+      setSetupWarning("Use o endereço HTTPS da Ayla.");
+      return;
+    }
+    if (password.length < 12) {
+      setSetupWarning("Digite a senha privada para entrar.");
+      return;
+    }
+    setAuthBusy(true);
+    setSetupWarning("");
+    try {
+      const authenticated = await loginAylaPrivateServer(endpoint, password);
+      onConnectionChange(authenticated);
+      setShareFinancial(false);
+      setTokenInput("");
+      setSetupOpen(false);
+      // Only the HTTPS URL is saved. The private password and session stay in memory only.
+      await AsyncStorage.setItem(ENDPOINT_KEY, endpoint).catch(() => {});
+    } catch (error) {
+      setSetupWarning(error instanceof Error ? error.message : "Falha ao entrar.");
+    } finally {
+      setAuthBusy(false);
+    }
+  }
+
+  function disconnectPrivateServer() {
+    ++requestRef.current;
+    controllerRef.current?.abort();
+    onConnectionChange(null);
+    setShareFinancial(false);
+    setBusy(false);
+    setSetupOpen(true);
+  }
 
   function clearChat() {
     const clear = () => {
@@ -125,7 +179,7 @@ export default function AylaChat({ data, onDataChange, onNavigate, onReset }: Pr
     const requestId = ++requestRef.current;
     const localAction = parseAction(prompt, data);
     const indicator = detectIndicator(prompt);
-    const willSendOnline = !localAction && !indicator && aylaOnlineConfigured &&
+    const willSendOnline = !localAction && !indicator && onlineReady &&
       (!financialQuestion(prompt) || shareFinancial);
     const next = [...historyRef.current, makeMessage("user", prompt.slice(0, 2000), undefined, willSendOnline)];
     updateHistory(next);
@@ -154,15 +208,15 @@ export default function AylaChat({ data, onDataChange, onNavigate, onReset }: Pr
     }
 
     // Financial questions can be answered locally without exporting personal records.
-    if (financialQuestion(prompt) && (!aylaOnlineConfigured || !shareFinancial)) {
+    if (financialQuestion(prompt) && (!onlineReady || !shareFinancial)) {
       addReply(answerQuestion(prompt, data));
       return;
     }
-    if (!aylaOnlineConfigured) {
+    if (!onlineReady || !connection) {
       addReply(
         "Oi! Sou a Ayla. Já posso conversar sobre seus gastos, limites e reserva aqui no KYVON. " +
         "Para responder perguntas gerais como uma IA avançada, meu servidor de inteligência artificial " +
-        "ainda precisa ser conectado pelo desenvolvedor. Você pode perguntar sobre suas finanças agora."
+        "ainda precisa ser ativada com sua senha em Configurar servidor. Você pode perguntar sobre suas finanças agora."
       );
       return;
     }
@@ -175,7 +229,7 @@ export default function AylaChat({ data, onDataChange, onNavigate, onReset }: Pr
       const summary = shareFinancial ? financialSummary(data) : undefined;
       // Keep on-device financial conversations out of remote chat history by default.
       const onlineHistory = next.filter(item => item.sentOnline === true);
-      const answer = await askAylaOnline(onlineHistory, summary, controller.signal);
+      const answer = await askAylaOnline(connection, onlineHistory, summary, controller.signal);
       if (requestRef.current === requestId) addReply(answer, undefined, true);
     } catch (error) {
       if (requestRef.current === requestId) {
@@ -217,12 +271,53 @@ export default function AylaChat({ data, onDataChange, onNavigate, onReset }: Pr
         <View style={styles.avatar}><Text style={styles.avatarLetter}>A</Text></View>
         <View style={styles.heading}>
           <Text style={styles.name}>Ayla <Ionicons name="sparkles" size={16} color="#3973EA" /></Text>
-          <Text style={styles.status}>{aylaOnlineConfigured ? "IA conectável • Respostas em português" : "Assistente financeiro • Modo básico"}</Text>
+          <Text style={styles.status}>{onlineReady ? "Servidor HTTPS configurado • Sessão privada" : "Assistente financeiro • Modo local"}</Text>
         </View>
+        <TouchableOpacity accessibilityRole="button" accessibilityLabel="Configurar servidor da Ayla"
+          onPress={() => setSetupOpen(!setupOpen)} style={styles.newButton}>
+          <Ionicons name="server-outline" size={21} color="#3A5D91" />
+        </TouchableOpacity>
         <TouchableOpacity accessibilityRole="button" accessibilityLabel="Nova conversa" onPress={clearChat} style={styles.newButton}>
           <Ionicons name="create-outline" size={21} color="#3A5D91" />
         </TouchableOpacity>
       </View>
+
+      {setupOpen && (
+        <View style={styles.setupPanel}>
+          <Text style={styles.setupTitle}>Servidor privado da Ayla</Text>
+          <Text style={styles.setupHint}>
+            O endereço HTTPS já está preparado. Entre com sua senha privada; ela não será salva no celular.
+          </Text>
+          <TextInput
+            accessibilityLabel="Endereço HTTPS do servidor Ayla"
+            value={endpointInput}
+            onChangeText={setEndpointInput}
+            placeholder="https://seu-app.up.railway.app/chat"
+            placeholderTextColor="#8A99B0"
+            autoCapitalize="none" autoCorrect={false}
+            keyboardType="url" style={styles.setupInput}
+          />
+          <TextInput
+            accessibilityLabel="Senha privada de acesso à Ayla"
+            value={tokenInput} onChangeText={setTokenInput}
+            placeholder="Senha de acesso à Ayla"
+            placeholderTextColor="#8A99B0"
+            secureTextEntry autoCapitalize="none" autoCorrect={false}
+            style={styles.setupInput}
+          />
+          {!!setupWarning && <Text style={styles.setupWarning}>{setupWarning}</Text>}
+          <View style={styles.setupActions}>
+            {onlineReady && (
+              <TouchableOpacity accessibilityRole="button" style={styles.disconnectButton} onPress={disconnectPrivateServer}>
+                <Text style={styles.disconnectText}>Desconectar</Text>
+              </TouchableOpacity>
+            )}
+            <TouchableOpacity accessibilityRole="button" disabled={authBusy} style={styles.connectButton} onPress={connectPrivateServer}>
+              <Text style={styles.connectText}>{authBusy ? "Autenticando..." : onlineReady ? "Trocar sessão" : "Entrar na Ayla"}</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      )}
 
       <ScrollView ref={scrollRef} style={styles.history} contentContainerStyle={styles.historyContent}
         keyboardShouldPersistTaps="handled" onContentSizeChange={() => scrollRef.current?.scrollToEnd({ animated: true })}>
@@ -284,7 +379,7 @@ export default function AylaChat({ data, onDataChange, onNavigate, onReset }: Pr
       </ScrollView>
 
       <View style={styles.composer}>
-        {aylaOnlineConfigured && (
+        {onlineReady && (
           <TouchableOpacity accessibilityRole="switch" accessibilityState={{ checked: shareFinancial }}
             accessibilityLabel="Compartilhar resumo financeiro com IA online"
             onPress={() => setShareFinancial(!shareFinancial)} style={styles.privacyRow}>
@@ -306,9 +401,9 @@ export default function AylaChat({ data, onDataChange, onNavigate, onReset }: Pr
           </TouchableOpacity>
         </View>
         <Text style={styles.disclaimer}>
-          {aylaOnlineConfigured
-            ? "Mensagens são enviadas ao serviço de IA. O resumo financeiro só é enviado com sua permissão."
-            : "Seu chat fica salvo neste aparelho. A IA avançada ainda não está conectada."}
+          {onlineReady
+            ? "Perguntas gerais vão à IA online. Resumo financeiro só com sua permissão."
+            : "Modo local ativo. Configure seu servidor HTTPS para conversar com a IA online."}
         </Text>
       </View>
     </View>
@@ -317,6 +412,17 @@ export default function AylaChat({ data, onDataChange, onNavigate, onReset }: Pr
 
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: "#F6F8FC" },
+  setupPanel: { padding: 14, backgroundColor: "#EAF2FF", borderBottomWidth: 1, borderBottomColor: "#D6E3F8" },
+  setupTitle: { fontSize: 14, fontWeight: "900", color: "#24476D", marginBottom: 6 },
+  setupHint: { fontSize: 11, lineHeight: 17, color: "#56728E", marginBottom: 10 },
+  setupInput: { padding: 11, borderRadius: 12, borderWidth: 1, borderColor: "#CCDFF8",
+    backgroundColor: "#FFFFFF", color: "#17253B", fontSize: 13, marginBottom: 8 },
+  setupWarning: { color: "#BC343E", fontSize: 11, marginBottom: 6 },
+  setupActions: { flexDirection: "row", gap: 9, justifyContent: "flex-end" },
+  connectButton: { backgroundColor: "#3477EF", borderRadius: 12, paddingVertical: 11, paddingHorizontal: 18 },
+  connectText: { color: "#FFFFFF", fontSize: 12, fontWeight: "800" },
+  disconnectButton: { backgroundColor: "#FFFFFF", borderRadius: 12, paddingVertical: 11, paddingHorizontal: 15 },
+  disconnectText: { color: "#43627E", fontSize: 12, fontWeight: "800" },
   topBar: { backgroundColor: "#FFFFFF", paddingHorizontal: 18, paddingVertical: 12,
     borderBottomWidth: 1, borderBottomColor: "#E7EDF5", flexDirection: "row", alignItems: "center", gap: 11 },
   avatar: { width: 46, height: 46, backgroundColor: "#3477EF", borderRadius: 17,
