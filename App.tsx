@@ -1,7 +1,7 @@
 // KYVON: offline-first React Native app; no WebView is used in the standalone APK.
 import React, { useEffect, useRef, useState } from "react";
 import {
-  Alert, KeyboardAvoidingView, Platform, ScrollView,
+  Alert, Keyboard, KeyboardAvoidingView, Platform, ScrollView,
   StatusBar, StyleSheet, Text, TextInput, TouchableOpacity, View
 } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
@@ -46,6 +46,7 @@ function FinanceApp() {
   const [canSave, setCanSave] = useState(false);
   const [storageWarning, setStorageWarning] = useState<string | null>(null);
   const [tab, setTab] = useState<Tab>("home");
+  const [keyboardVisible, setKeyboardVisible] = useState(false);
   const [aylaConnection, setAylaConnection] = useState<AylaPrivateConnection | null>(null);
   const [today, setToday] = useState(() => new Date());
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -61,6 +62,15 @@ function FinanceApp() {
   const [reserveInput, setReserveInput] = useState("");
   const [goalInput, setGoalInput] = useState("");
 
+
+  // Android resizes the app when the keyboard opens. Hide bottom navigation
+  // only in Ayla so the message field stays directly above the keyboard.
+  useEffect(() => {
+    if (Platform.OS === "web") return;
+    const shown = Keyboard.addListener("keyboardDidShow", () => setKeyboardVisible(true));
+    const hidden = Keyboard.addListener("keyboardDidHide", () => setKeyboardVisible(false));
+    return () => { shown.remove(); hidden.remove(); };
+  }, []);
 
   useEffect(() => {
     const timer = setInterval(() => setToday(new Date()), 30_000);
@@ -139,6 +149,32 @@ function FinanceApp() {
   const goalProgress = data.goalTarget > 0
     ? Math.min(100, (data.reserve / data.goalTarget) * 100) : 0;
   const visibleExpenses = historyPeriod === "week" ? weekExpenses : data.expenses;
+
+  // Seven-day overview uses the device's local calendar dates, not UTC labels.
+  const lastSevenDays = Array.from({ length: 7 }, (_, index) => {
+    const start = new Date(today);
+    start.setHours(0, 0, 0, 0);
+    start.setDate(start.getDate() - (6 - index));
+    const end = new Date(start);
+    end.setDate(end.getDate() + 1);
+    const amount = sumExpenses(data.expenses.filter(item => {
+      const date = new Date(item.date);
+      return date >= start && date < end;
+    }));
+    return { label: ["dom", "seg", "ter", "qua", "qui", "sex", "sáb"][start.getDay()], amount };
+  });
+  const maxDailyExpense = Math.max(1, ...lastSevenDays.map(day => day.amount));
+  const weeklyRatio = data.weeklyLimit > 0 ? weeklySpent / data.weeklyLimit : 0;
+  const monthlyRatio = data.budget > 0 ? spent / data.budget : 0;
+  const spendingInsight = weeklyRatio >= 1
+    ? "Você ultrapassou seu limite semanal. Revise os próximos gastos antes de registrar novas compras."
+    : weeklyRatio >= 0.8
+      ? "Você já utilizou pelo menos 80% do limite semanal. Confira quanto ainda pode gastar."
+      : monthlyRatio >= 1
+        ? "O orçamento deste mês foi ultrapassado. A Ayla pode ajudar a reorganizar seus limites."
+        : monthlyRatio >= 0.85
+          ? "Você está perto de utilizar todo o orçamento mensal. Vale revisar os gastos restantes."
+          : null;
 
   function resetExpenseForm() {
     setEditingId(null);
@@ -309,6 +345,34 @@ function FinanceApp() {
               </View>
             </View>
 
+            {spendingInsight && (
+              <View style={styles.insightCard} accessibilityRole="alert">
+                <Ionicons name="alert-circle-outline" size={22} color="#B36B17" />
+                <View style={styles.insightContent}>
+                  <Text style={styles.insightTitle}>Atenção ao planejamento</Text>
+                  <Text style={styles.insightText}>{spendingInsight}</Text>
+                </View>
+              </View>
+            )}
+            <View style={styles.panel}>
+              <View style={styles.sectionHeader}>
+                <Text style={styles.sectionTitle}>Últimos 7 dias</Text>
+                <Ionicons name="bar-chart-outline" size={19} color="#2563EB" />
+              </View>
+              <Text style={styles.trendSubtitle}>Gastos registrados por dia</Text>
+              <View style={styles.trendColumns}>
+                {lastSevenDays.map((day, index) => (
+                  <View key={index} style={styles.trendColumn}>
+                    <Text style={styles.trendValue}>{day.amount > 0 ? money(day.amount) : "—"}</Text>
+                    <View style={styles.trendTrack}>
+                      <View style={[styles.trendBar, { height: day.amount > 0 ? 8 + 64 * (day.amount / maxDailyExpense) : 4 },
+                        index === 6 && styles.trendBarToday]} />
+                    </View>
+                    <Text style={[styles.trendLabel, index === 6 && styles.trendLabelToday]}>{day.label}</Text>
+                  </View>
+                ))}
+              </View>
+            </View>
             <View style={styles.panel}>
               <View style={styles.sectionHeader}>
                 <Text style={styles.sectionTitle}>Onde você gastou</Text>
@@ -436,13 +500,13 @@ function FinanceApp() {
         </ScrollView>}
       </KeyboardAvoidingView>
 
-      <View style={styles.tabBar}>
+      {!(tab === "assistant" && keyboardVisible) && <View style={styles.tabBar}>
         <TabButton icon="home-outline" label="Início" active={tab === "home"} onPress={() => setTab("home")} />
         <TabButton icon="receipt-outline" label="Gastos" active={tab === "expenses"} onPress={() => setTab("expenses")} />
         <TabButton icon="shield-checkmark-outline" label="Reserva" active={tab === "goals"} onPress={() => setTab("goals")} />
         <TabButton icon="chatbubble-ellipses-outline" label="Ayla" active={tab === "assistant"} onPress={() => setTab("assistant")} />
         <TabButton icon="settings-outline" label="Ajustes" active={tab === "settings"} onPress={() => setTab("settings")} />
-      </View>
+      </View>}
     </SafeAreaView>
   );
 }
@@ -519,6 +583,20 @@ const styles = StyleSheet.create({
   statLabel: { color: "#7D8A9B", fontSize: 11, marginTop: 10 },
   statValue: { color: "#E66D70", fontSize: 17, fontWeight: "800", marginTop: 5 },
   panel: { backgroundColor: "#FFFFFF", borderRadius: 22, padding: 18, marginBottom: 19, borderWidth: 1, borderColor: "#ECF0F6" },
+  insightCard: { backgroundColor: "#FFF7E9", borderWidth: 1, borderColor: "#F4E3C1", borderRadius: 20,
+    padding: 16, flexDirection: "row", gap: 11, marginBottom: 18, alignItems: "flex-start" },
+  insightContent: { flex: 1 },
+  insightTitle: { color: "#93601F", fontSize: 13, fontWeight: "800", marginBottom: 4 },
+  insightText: { color: "#805C30", fontSize: 12, lineHeight: 19 },
+  trendSubtitle: { fontSize: 12, color: "#7B8BA2", marginTop: -6, marginBottom: 13 },
+  trendColumns: { flexDirection: "row", gap: 5, alignItems: "flex-end", justifyContent: "space-between" },
+  trendColumn: { flex: 1, minWidth: 0, alignItems: "center" },
+  trendValue: { fontSize: 8, color: "#65758D", marginBottom: 6, textAlign: "center" },
+  trendTrack: { height: 76, justifyContent: "flex-end", alignItems: "center", width: "100%" },
+  trendBar: { backgroundColor: "#9ABDFB", borderRadius: 7, width: "66%", minHeight: 4 },
+  trendBarToday: { backgroundColor: "#2563EB" },
+  trendLabel: { color: "#7989A1", fontSize: 10, marginTop: 8 },
+  trendLabelToday: { color: "#2563EB", fontWeight: "900" },
   categoryBlock: { marginTop: 8, marginBottom: 14 },
   categoryLine: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
   categoryName: { color: "#45536A", fontSize: 12, fontWeight: "600" },
