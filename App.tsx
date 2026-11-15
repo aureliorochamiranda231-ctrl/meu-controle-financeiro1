@@ -244,7 +244,7 @@ function FinanceApp() {
       <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === "ios" ? "padding" : undefined}>
         {tab === "assistant"
           ? <AylaChat data={data} onDataChange={setData} onNavigate={setTab} onReset={resetAll} />
-          : <ScrollView key={tab} ref={scrollRef} contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">}
+          : <ScrollView key={tab} ref={scrollRef} contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
           {tab === "home" && <>
             <View style={styles.welcomeRow}>
               <View>
