@@ -63,8 +63,8 @@ function FinanceApp() {
   const [goalInput, setGoalInput] = useState("");
 
 
-  // Android resizes the app when the keyboard opens. Hide bottom navigation
-  // only in Ayla so the message field stays directly above the keyboard.
+  // Android edge-to-edge screens do not always resize when the keyboard opens.
+  // KeyboardAvoidingView adds keyboard padding; hide Ayla navigation while typing.
   useEffect(() => {
     if (Platform.OS === "web") return;
     const shown = Keyboard.addListener("keyboardDidShow", () => setKeyboardVisible(true));
@@ -280,7 +280,7 @@ function FinanceApp() {
         <Ionicons name="alert-circle-outline" color="#9A6700" size={19} />
         <Text style={styles.warningText}>{storageWarning}</Text>
       </View>}
-      <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === "ios" ? "padding" : undefined}>
+      <KeyboardAvoidingView style={{ flex: 1, minHeight: 0 }} behavior={Platform.OS === "web" ? undefined : "padding"}>
         {tab === "assistant"
           ? <AylaChat data={data} onDataChange={setData} onNavigate={setTab} onReset={resetAll}
               connection={aylaConnection} onConnectionChange={setAylaConnection} />

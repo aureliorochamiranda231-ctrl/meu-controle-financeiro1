@@ -77,6 +77,7 @@ function ThinkingDots() {
 export default function AylaChat({ data, onDataChange, onNavigate, onReset, connection, onConnectionChange }: Props) {
   const [messages, setMessages] = useState<AylaMessage[]>([]);
   const [text, setText] = useState("");
+  const [composerFocused, setComposerFocused] = useState(false);
   const [pending, setPending] = useState<Pending | null>(null);
   const [busy, setBusy] = useState(false);
   const [ready, setReady] = useState(false);
@@ -346,7 +347,8 @@ export default function AylaChat({ data, onDataChange, onNavigate, onReset, conn
 
       <ScrollView ref={scrollRef} style={styles.history} contentContainerStyle={styles.historyContent}
         keyboardShouldPersistTaps="handled" keyboardDismissMode="on-drag"
-        onContentSizeChange={() => scrollRef.current?.scrollToEnd({ animated: true })}>
+        onContentSizeChange={() => scrollRef.current?.scrollToEnd({ animated: true })}
+        onLayout={() => { if (composerFocused) scrollRef.current?.scrollToEnd({ animated: false }); }}>
         {messages.length === 0 && (
           <View style={styles.welcome}>
             <View style={styles.welcomeIcon}><Ionicons name="sparkles" size={30} color="#FFFFFF" /></View>
@@ -425,7 +427,8 @@ export default function AylaChat({ data, onDataChange, onNavigate, onReset, conn
             placeholder="Converse com a Ayla..." placeholderTextColor="#8A99B0"
             multiline maxLength={2000} editable={ready && !pending}
             textAlignVertical="center" selectionColor="#2563EB"
-            onFocus={() => scrollRef.current?.scrollToEnd({ animated: true })} />
+            onFocus={() => { setComposerFocused(true); scrollRef.current?.scrollToEnd({ animated: true }); }}
+            onBlur={() => setComposerFocused(false)} />
           <TouchableOpacity accessibilityRole="button" accessibilityLabel="Enviar mensagem"
             accessibilityState={{ disabled: !text.trim() || busy || !!pending || !ready }}
             disabled={!text.trim() || busy || !!pending || !ready}
@@ -434,11 +437,11 @@ export default function AylaChat({ data, onDataChange, onNavigate, onReset, conn
             <Ionicons name="arrow-up" size={22} color="#FFFFFF" />
           </TouchableOpacity>
         </View>
-        <Text style={styles.disclaimer}>
+        {!composerFocused && <Text style={styles.disclaimer}>
           {onlineReady
             ? "Perguntas gerais vão à IA online. Resumo financeiro só com sua permissão."
             : "Modo local ativo. Configure seu servidor HTTPS para conversar com a IA online."}
-        </Text>
+        </Text>}
       </View>
     </View>
   );
