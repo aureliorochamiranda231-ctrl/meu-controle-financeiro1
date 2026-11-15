@@ -82,14 +82,14 @@ export default function AylaChat({ data, onDataChange, onNavigate, onReset, conn
     (async () => {
       try {
         const saved = await AsyncStorage.getItem(CHAT_KEY);
-        if (!active || !saved) return;
-        const parsed: unknown = JSON.parse(saved);
-        if (parsed && typeof parsed === "object") {
-          const record = parsed as { messages?: unknown };
-          if (Array.isArray(record.messages)) {
-            updateHistory(record.messages.filter(validMessage).slice(-MAX_HISTORY));
+        if (active && saved) {
+          const parsed: unknown = JSON.parse(saved);
+          if (parsed && typeof parsed === "object") {
+            const record = parsed as { messages?: unknown };
+            if (Array.isArray(record.messages)) {
+              updateHistory(record.messages.filter(validMessage).slice(-MAX_HISTORY));
+            }
           }
-          // Never automatically reuse financial-sharing consent from an older session.
         }
         const savedEndpoint = await AsyncStorage.getItem(ENDPOINT_KEY);
         if (active && savedEndpoint && normalizeAylaEndpoint(savedEndpoint)) {
