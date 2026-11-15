@@ -139,8 +139,8 @@ jobs:
         if: github.ref == 'refs/heads/main'
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: kyvon-beta-v1.7.2
-          name: KYVON beta v1.7.2 (Android nativo)
+          tag_name: kyvon-beta-v1.7.3
+          name: KYVON beta v1.7.3 (Android nativo)
           body: 'KYVON com Ayla: conversa, histórico e assistente financeiro com confirmação de ações. IA geral requer serviço autenticado. JavaScript/Hermes integrado; dispensa servidor Metro e WebView. Versão de desenvolvimento, não publicada na Play Store. Se já tiver APK assinado com outra chave, desinstale a versão antiga antes de instalar.'
           prerelease: true
           files: output/KYVON-beta.apk
