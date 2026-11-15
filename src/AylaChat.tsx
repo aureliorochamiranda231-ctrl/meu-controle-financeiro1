@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from "react";
 import {
-  Alert, Linking, Platform, ScrollView, StyleSheet, Text,
+  Alert, Animated, Linking, Platform, ScrollView, StyleSheet, Text,
   TextInput, TouchableOpacity, View
 } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
@@ -49,6 +49,31 @@ function financialQuestion(text: string): boolean {
   return /\b(gast|gastos|gastei|despesa|despesas|orcamento|limite|limites|renda|salario|reserva|meta|financ|dinheiro|economiz|poup|categoria|categorias|saldo)\w*/.test(normalize(text));
 }
 
+/** Animated "thinking" dots are only a waiting indicator, not private AI reasoning. */
+function ThinkingDots() {
+  const dots = useRef([new Animated.Value(0.4), new Animated.Value(0.4), new Animated.Value(0.4)]).current;
+  useEffect(() => {
+    const animation = Animated.loop(Animated.sequence([
+      Animated.stagger(130, dots.map(value => Animated.timing(value, {
+        toValue: 1, duration: 260, useNativeDriver: true
+      }))),
+      Animated.stagger(130, dots.map(value => Animated.timing(value, {
+        toValue: 0.4, duration: 260, useNativeDriver: true
+      }))),
+      Animated.delay(180)
+    ]));
+    animation.start();
+    return () => animation.stop();
+  }, [dots]);
+  return (
+    <View style={styles.thinkingDots} accessibilityElementsHidden>
+      {dots.map((value, index) => (
+        <Animated.View key={index} style={[styles.thinkingDot, { opacity: value, transform: [{ scale: value }] }]} />
+      ))}
+    </View>
+  );
+}
+
 export default function AylaChat({ data, onDataChange, onNavigate, onReset, connection, onConnectionChange }: Props) {
   const [messages, setMessages] = useState<AylaMessage[]>([]);
   const [text, setText] = useState("");
@@ -56,7 +81,7 @@ export default function AylaChat({ data, onDataChange, onNavigate, onReset, conn
   const [busy, setBusy] = useState(false);
   const [ready, setReady] = useState(false);
   const [shareFinancial, setShareFinancial] = useState(false);
-  const [setupOpen, setSetupOpen] = useState(!isAylaConnectionReady(connection));
+  const [setupOpen, setSetupOpen] = useState(false);
   const [endpointInput, setEndpointInput] = useState(
     DEFAULT_AYLA_ENDPOINT
   );
@@ -320,7 +345,8 @@ export default function AylaChat({ data, onDataChange, onNavigate, onReset, conn
       )}
 
       <ScrollView ref={scrollRef} style={styles.history} contentContainerStyle={styles.historyContent}
-        keyboardShouldPersistTaps="handled" onContentSizeChange={() => scrollRef.current?.scrollToEnd({ animated: true })}>
+        keyboardShouldPersistTaps="handled" keyboardDismissMode="on-drag"
+        onContentSizeChange={() => scrollRef.current?.scrollToEnd({ animated: true })}>
         {messages.length === 0 && (
           <View style={styles.welcome}>
             <View style={styles.welcomeIcon}><Ionicons name="sparkles" size={30} color="#FFFFFF" /></View>
@@ -345,6 +371,9 @@ export default function AylaChat({ data, onDataChange, onNavigate, onReset, conn
             {item.role === "assistant" && <View style={styles.smallAvatar}><Text style={styles.smallAvatarText}>A</Text></View>}
             <View style={[styles.bubble, item.role === "user" ? styles.userBubble : styles.aiBubble]}>
               <Text style={item.role === "user" ? styles.userText : styles.aiText} selectable>{item.content}</Text>
+              <Text style={item.role === "user" ? styles.userTimestamp : styles.aiTimestamp}>
+                {new Date(item.createdAt).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}
+              </Text>
               {item.source && (
                 <TouchableOpacity accessibilityRole="link" onPress={() => Linking.openURL(item.source!).catch(() => {})}>
                   <Text style={styles.source}>Consultar a fonte oficial</Text>
@@ -373,7 +402,10 @@ export default function AylaChat({ data, onDataChange, onNavigate, onReset, conn
         {busy && (
           <View style={styles.typingRow}>
             <View style={styles.smallAvatar}><Text style={styles.smallAvatarText}>A</Text></View>
-            <Text style={styles.typing}>Ayla está pensando…</Text>
+            <View style={styles.thinkingBubble} accessibilityLabel="Ayla está preparando sua resposta">
+              <ThinkingDots />
+              <Text style={styles.typing}>Ayla está pensando...</Text>
+            </View>
           </View>
         )}
       </ScrollView>
@@ -391,7 +423,9 @@ export default function AylaChat({ data, onDataChange, onNavigate, onReset, conn
           <TextInput accessibilityLabel="Mensagem para Ayla"
             style={styles.input} value={text} onChangeText={setText}
             placeholder="Converse com a Ayla..." placeholderTextColor="#8A99B0"
-            multiline maxLength={2000} editable={ready && !busy && !pending} />
+            multiline maxLength={2000} editable={ready && !pending}
+            textAlignVertical="center" selectionColor="#2563EB"
+            onFocus={() => scrollRef.current?.scrollToEnd({ animated: true })} />
           <TouchableOpacity accessibilityRole="button" accessibilityLabel="Enviar mensagem"
             accessibilityState={{ disabled: !text.trim() || busy || !!pending || !ready }}
             disabled={!text.trim() || busy || !!pending || !ready}
@@ -411,7 +445,7 @@ export default function AylaChat({ data, onDataChange, onNavigate, onReset, conn
 }
 
 const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: "#F6F8FC" },
+  screen: { flex: 1, minHeight: 0, backgroundColor: "#F6F8FC" },
   setupPanel: { padding: 14, backgroundColor: "#EAF2FF", borderBottomWidth: 1, borderBottomColor: "#D6E3F8" },
   setupTitle: { fontSize: 14, fontWeight: "900", color: "#24476D", marginBottom: 6 },
   setupHint: { fontSize: 11, lineHeight: 17, color: "#56728E", marginBottom: 10 },
@@ -432,7 +466,7 @@ const styles = StyleSheet.create({
   name: { color: "#152B49", fontSize: 20, fontWeight: "900" },
   status: { color: "#7386A2", fontSize: 11, marginTop: 3 },
   newButton: { padding: 11, backgroundColor: "#F0F5FF", borderRadius: 14 },
-  history: { flex: 1 },
+  history: { flex: 1, minHeight: 0 },
   historyContent: { padding: 17, paddingBottom: 26, flexGrow: 1 },
   welcome: { marginTop: 38, alignItems: "center" },
   welcomeIcon: { width: 72, height: 72, borderRadius: 27, backgroundColor: "#3477EF",
@@ -443,16 +477,19 @@ const styles = StyleSheet.create({
   suggestion: { backgroundColor: "#FFFFFF", borderWidth: 1, borderColor: "#E4EAF4",
     padding: 15, borderRadius: 17, flexDirection: "row", alignItems: "center", gap: 11 },
   suggestionText: { color: "#3A526E", fontWeight: "600", fontSize: 13, flex: 1 },
-  messageRow: { flexDirection: "row", alignItems: "flex-end", gap: 8, marginBottom: 17 },
+  messageRow: { flexDirection: "row", alignItems: "flex-end", gap: 9, marginBottom: 15 },
   userRow: { justifyContent: "flex-end" },
   smallAvatar: { width: 29, height: 29, backgroundColor: "#DEEBFF", borderRadius: 11,
     alignItems: "center", justifyContent: "center", marginBottom: 2 },
   smallAvatarText: { color: "#3477EF", fontSize: 16, fontWeight: "900" },
-  bubble: { borderRadius: 19, paddingHorizontal: 15, paddingVertical: 12, maxWidth: "84%" },
-  userBubble: { backgroundColor: "#3477EF", borderBottomRightRadius: 6 },
-  aiBubble: { backgroundColor: "#FFFFFF", borderWidth: 1, borderColor: "#E8EDF5", borderBottomLeftRadius: 6 },
-  userText: { color: "#FFFFFF", fontSize: 14, lineHeight: 21 },
-  aiText: { color: "#263C59", fontSize: 14, lineHeight: 21 },
+  bubble: { borderRadius: 24, paddingHorizontal: 16, paddingTop: 13, paddingBottom: 10, maxWidth: "88%" },
+  userBubble: { backgroundColor: "#2E6BDF", borderBottomRightRadius: 8 },
+  aiBubble: { backgroundColor: "#FFFFFF", borderWidth: 1, borderColor: "#E6ECF6", borderBottomLeftRadius: 8,
+    shadowColor: "#253858", shadowOpacity: 0.05, shadowRadius: 8, elevation: 1 },
+  userText: { color: "#FFFFFF", fontSize: 14, lineHeight: 22 },
+  aiText: { color: "#263C59", fontSize: 14, lineHeight: 22 },
+  userTimestamp: { fontSize: 10, color: "#DBE8FF", marginTop: 7, alignSelf: "flex-end" },
+  aiTimestamp: { fontSize: 10, color: "#97A5B8", marginTop: 7, alignSelf: "flex-end" },
   source: { color: "#2563EB", fontSize: 12, fontWeight: "800", paddingTop: 10 },
   confirmCard: { backgroundColor: "#EAF2FF", borderRadius: 18, padding: 16, marginBottom: 18 },
   confirmTitleRow: { flexDirection: "row", alignItems: "center", gap: 9 },
@@ -463,17 +500,22 @@ const styles = StyleSheet.create({
   cancelText: { color: "#547193", fontWeight: "800" },
   confirmButton: { flex: 1, padding: 13, borderRadius: 12, backgroundColor: "#3477EF", alignItems: "center" },
   confirmButtonText: { color: "#FFFFFF", fontWeight: "800" },
-  typingRow: { flexDirection: "row", alignItems: "center", gap: 10, paddingVertical: 8 },
-  typing: { color: "#6D829D", fontSize: 13, fontStyle: "italic" },
+  typingRow: { flexDirection: "row", alignItems: "flex-end", gap: 9, paddingBottom: 12 },
+  thinkingBubble: { flexDirection: "row", alignItems: "center", flexShrink: 1, gap: 10,
+    borderWidth: 1, borderColor: "#E6ECF6", borderRadius: 22, borderBottomLeftRadius: 8,
+    backgroundColor: "#FFFFFF", paddingHorizontal: 15, paddingVertical: 14 },
+  thinkingDots: { flexDirection: "row", alignItems: "center", gap: 4 },
+  thinkingDot: { width: 7, height: 7, borderRadius: 4, backgroundColor: "#3477EF" },
+  typing: { color: "#6D829D", fontSize: 12, fontWeight: "600" },
   composer: { backgroundColor: "#FFFFFF", borderTopColor: "#E7EDF5", borderTopWidth: 1,
-    paddingHorizontal: 14, paddingTop: 10, paddingBottom: 9 },
+    paddingHorizontal: 14, paddingTop: 11, paddingBottom: 9 },
   privacyRow: { flexDirection: "row", alignItems: "center", gap: 7, paddingBottom: 9 },
   privacyText: { color: "#657B96", fontSize: 11, flex: 1 },
   inputWrap: { flexDirection: "row", alignItems: "flex-end", backgroundColor: "#F5F8FC",
-    borderWidth: 1, borderColor: "#E1E9F3", borderRadius: 23, padding: 6, gap: 8 },
+    borderWidth: 1, borderColor: "#DDE6F4", borderRadius: 27, padding: 6, gap: 8 },
   input: { flex: 1, minHeight: 43, maxHeight: 128, paddingVertical: 10, paddingHorizontal: 12,
-    color: "#182D4D", fontSize: 14 },
-  sendButton: { width: 42, height: 42, borderRadius: 16, backgroundColor: "#3477EF",
+    color: "#182D4D", fontSize: 15, lineHeight: 21 },
+  sendButton: { width: 42, height: 42, borderRadius: 21, backgroundColor: "#3477EF",
     justifyContent: "center", alignItems: "center" },
   sendDisabled: { opacity: 0.4 },
   disclaimer: { color: "#8390A4", fontSize: 10, textAlign: "center", marginTop: 8, lineHeight: 14 }
