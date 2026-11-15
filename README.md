@@ -35,3 +35,11 @@ O GitHub Actions gera o APK Android em `kyvon-beta-v1.7.3` e publica em [Release
 
 ## Privacidade
 Os registros continuam **locais**; não há conta, sincronização, banco conectado ou IA hospedada pronta para uso. Serviços como Supabase e PostHog ainda não estão integrados à aplicação. Não comite chaves privadas em um repositório público. Desinstalar o APK para instalar outro pode apagar os registros locais.
+
+
+## Novidades beta v1.8.0
+
+- Chat Ayla com balões modernos, horário nas mensagens e animação de espera por resposta.
+- Campo de texto acompanha o teclado virtual no Android (`softwareKeyboardLayoutMode: resize`), com a barra de navegação oculta enquanto digita na Ayla.
+- Página inicial com gráfico de despesas dos últimos sete dias e alertas contextuais para limite semanal/orçamento mensal.
+- Nenhuma despesa é alterada sem confirmação na Ayla. Os dados continuam salvos localmente; a IA online permanece condicionada à configuração do serviço HTTPS autenticado.
