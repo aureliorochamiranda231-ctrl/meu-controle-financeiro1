@@ -119,7 +119,13 @@ const server = Bun.serve({
     if (!await validSession(req.headers.get("authorization"))) return json({ error: "login_required" }, 401);
     if (limit(CALLS, "chat-global", MAX_GLOBAL_CHATS_PER_MINUTE, BUCKET_MS) ||
       limit(CALLS, "chat:" + ip, 20, BUCKET_MS)) return json({ error: "rate_limited" }, 429);
-    if (!Bun.env.OPENAI_API_KEY) return json({ error: "ai_key_missing" }, 503);
+    // Users sometimes paste a secret with surrounding quotes or whitespace.
+    // Never log the key or return it to the mobile app.
+    const pastedKey = (Bun.env.OPENAI_API_KEY || "").trim();
+    const apiKey = ((pastedKey.startsWith('"') && pastedKey.endsWith('"')) ||
+      (pastedKey.startsWith("'") && pastedKey.endsWith("'")))
+      ? pastedKey.slice(1, -1).trim() : pastedKey;
+    if (!apiKey) return json({ error: "ai_key_missing" }, 503);
     try {
       const value = await body(req);
       if (!Array.isArray(value?.messages) || value.messages.length < 1 || value.messages.length > 12 ||
@@ -131,7 +137,7 @@ const server = Bun.serve({
         ...value.messages.map((m: any) => ({ role: m.role, content: m.content }))];
       const upstream = await fetch("https://api.openai.com/v1/responses", {
         method: "POST",
-        headers: { "Authorization": "Bearer " + Bun.env.OPENAI_API_KEY, "Content-Type": "application/json" },
+        headers: { "Authorization": "Bearer " + apiKey, "Content-Type": "application/json" },
         body: JSON.stringify({
           model: Bun.env.AYLA_MODEL || "gpt-5.6-terra",
           store: false, instructions, input, max_output_tokens: 1100,
@@ -140,8 +146,14 @@ const server = Bun.serve({
         signal: AbortSignal.timeout(35000)
       });
       if (!upstream.ok) {
+        // Do not log the provider response: it can include sensitive request details.
         console.error("[AYLA] upstream code", upstream.status);
-        return json({ error: "ai_provider_error", providerStatus: upstream.status }, 502);
+        const reason = upstream.status === 401 ? "openai_invalid_key"
+          : upstream.status === 403 ? "openai_permission_denied"
+          : upstream.status === 429 ? "openai_quota_or_rate_limit"
+          : upstream.status === 400 || upstream.status === 404 ? "openai_model_or_request_error"
+          : "ai_provider_error";
+        return json({ error: reason, providerStatus: upstream.status }, 502);
       }
       const result: any = await upstream.json();
       const reply = (result.output || []).flatMap((m: any) => Array.isArray(m.content) ? m.content : [])
